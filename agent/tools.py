@@ -25,6 +25,10 @@ FRAUD_API_URL = os.getenv("FRAUD_API_URL", "http://localhost:8001/api/v1/fraud")
 LEDGER_API_URL = os.getenv("LEDGER_API_URL", "http://localhost:8002/api/v1/ledger")
 TYPOLOGY_API_URL = os.getenv("TYPOLOGY_API_URL", "http://localhost:8003/api/v1/typology")
 TOOL_TIMEOUT = float(os.getenv("AGENT_TOOL_TIMEOUT", "2.0"))
+# The fraud engine fails closed on this (engines/fraud/api.py::require_api_key); every
+# live-mode call into it must forward the same key the fraud service was started with.
+FRAUD_API_KEY = os.getenv("FRAUD_API_KEY", "")
+_FRAUD_AUTH_HEADERS = {"X-API-Key": FRAUD_API_KEY} if FRAUD_API_KEY else {}
 
 # Path to mock data fixtures
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "contracts", "mock_data")
@@ -44,15 +48,43 @@ def _load_mock_file(filename: str) -> Any:
 def get_transaction(transaction_id: str) -> Dict[str, Any]:
     """
     Retrieves transaction details matching TransactionRecord contract.
+    Routes to the engine that actually owns this ID: the three engines use
+    disjoint ID prefixes (TX-CARD-*/bare digits -> fraud, TX-LEDGER-* ->
+    ledger, TX-SYNTH-* -> typology's synthetic network edges), so a single
+    call always hit the fraud engine here in live mode regardless of tier,
+    silently mis-tiering every ledger/synthetic lookup (fixed during the
+    integration pass — see ARCHITECTURE.md).
     """
+    upper_id = transaction_id.upper()
+
     # 1. Attempt Live API if configured
     if VERITY_ENV == "live":
         try:
-            resp = requests.get(f"{FRAUD_API_URL}/transaction/{transaction_id}", timeout=TOOL_TIMEOUT)
-            if resp.status_code == 200:
-                return resp.json()
+            if "LEDGER" in upper_id:
+                resp = requests.get(f"{LEDGER_API_URL}/transaction/{transaction_id}", timeout=TOOL_TIMEOUT)
+                if resp.status_code == 200:
+                    return resp.json()
+            elif "SYNTH" in upper_id or "SYN" in upper_id:
+                resp = requests.get(f"{TYPOLOGY_API_URL}/network", timeout=TOOL_TIMEOUT)
+                if resp.status_code == 200:
+                    edge = next((e for e in resp.json().get("edges", []) if e.get("id") == transaction_id), None)
+                    if edge:
+                        return {
+                            "id": edge["id"],
+                            "tier": "synthetic_network",
+                            "timestamp": edge.get("timestamp"),
+                            "account_id": edge.get("from_account"),
+                            "amount": float(edge.get("amount", 0.0)),
+                            "direction": "debit",
+                            "raw_narration": edge.get("raw_narration"),
+                            "source_dataset": "synthetic_network.json",
+                        }
+            else:
+                resp = requests.get(f"{FRAUD_API_URL}/transaction/{transaction_id}", headers=_FRAUD_AUTH_HEADERS, timeout=TOOL_TIMEOUT)
+                if resp.status_code == 200:
+                    return resp.json()
         except requests.exceptions.RequestException as e:
-            logger.info("Live fraud API unavailable, falling back to mock: %s", e)
+            logger.info("Live engine API unavailable for %s, falling back to mock: %s", transaction_id, e)
 
     # 2. Mock Mode / Fallback Resolution
     timelines = _load_mock_file("mock_timelines.json") or []
@@ -131,7 +163,7 @@ def get_shap_explanation(transaction_id: str) -> Dict[str, Any]:
     # 1. Attempt Live API if configured
     if VERITY_ENV == "live":
         try:
-            resp = requests.get(f"{FRAUD_API_URL}/explain/{transaction_id}", timeout=TOOL_TIMEOUT)
+            resp = requests.get(f"{FRAUD_API_URL}/explain/{transaction_id}", headers=_FRAUD_AUTH_HEADERS, timeout=TOOL_TIMEOUT)
             if resp.status_code == 200:
                 return resp.json()
         except requests.exceptions.RequestException as e:
@@ -271,7 +303,7 @@ def counterfactual(transaction_id: str, parameter_overrides: Dict[str, Any]) -> 
                 "transaction_id": transaction_id,
                 "parameter_overrides": parameter_overrides
             }
-            resp = requests.post(f"{FRAUD_API_URL}/counterfactual", json=payload, timeout=TOOL_TIMEOUT)
+            resp = requests.post(f"{FRAUD_API_URL}/counterfactual", json=payload, headers=_FRAUD_AUTH_HEADERS, timeout=TOOL_TIMEOUT)
             if resp.status_code == 200:
                 return resp.json()
         except requests.exceptions.RequestException as e:

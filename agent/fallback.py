@@ -100,11 +100,11 @@ def execute_with_latency_guard(
     If the function takes longer than timeout_seconds or raises an exception,
     falls back to the pre-cached answer with explicit UI disclosure.
     """
-    start_time = time.time()
+    start_time = time.perf_counter()
     try:
         result = task_func()
-        elapsed = time.time() - start_time
-        if elapsed > timeout_seconds:
+        elapsed = time.perf_counter() - start_time
+        if elapsed >= timeout_seconds:
             cached = get_cached_answer(query)
             if cached:
                 cached["latency_seconds"] = elapsed

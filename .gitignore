@@ -33,8 +33,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# (removed bare `lib/`/`lib64/` — they matched dashboard/src/lib/** at any depth;
+# Python venv lib dirs are already covered by the venv/.venv patterns below)
 parts/
 sdist/
 var/
