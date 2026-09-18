@@ -8,30 +8,47 @@ Supports both live OpenAI/Gemini/Ollama endpoints and a built-in reasoning engin
 import os
 import json
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 import requests
 
 logger = logging.getLogger("verity.agent.llm")
 
 # Optional external LLM configuration
 LLM_API_KEY = os.getenv("VERITY_LLM_API_KEY", os.getenv("OPENAI_API_KEY", ""))
-LLM_BASE_URL = os.getenv("VERITY_LLM_BASE_URL", os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
+LLM_BASE_URL = os.getenv(
+    "VERITY_LLM_BASE_URL", os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+)
 LLM_MODEL = os.getenv("VERITY_LLM_MODEL", "gpt-4o-mini")
+# Local models (e.g. Ollama) generate slower than a hosted API; keep this
+# generous so a cold local model doesn't get treated as "unreachable".
+LLM_TIMEOUT_SECONDS = float(os.getenv("VERITY_LLM_TIMEOUT", "45.0"))
+
+VALID_ACTIONS = {
+    "get_transaction",
+    "get_shap_explanation",
+    "walk_graph",
+    "counterfactual",
+    "finish",
+}
 
 
 SYSTEM_PROMPT = """You are Verity's Financial Crime Investigation Agent, assisting analyst Priya.
 Your role: Investigate flagged cases by selecting the appropriate tool at each step.
-You have access to exactly four tools:
+You have access to EXACTLY these four tool names — respond with one of these
+five literal strings for "action" and never invent or rename a tool:
 1. get_transaction(transaction_id: str): Retrieves primary transaction details (amount, rail, timestamp).
 2. get_shap_explanation(transaction_id: str): Retrieves SHAP factor attribution for card fraud.
 3. walk_graph(account_id: str, tier: str, depth: int): Traverses single-account history for real_ledger, or multi-hop network for synthetic_network.
 4. counterfactual(transaction_id: str, parameter_overrides: dict): Re-runs the scoring model with modified parameters.
+5. finish: Use once sufficient evidence is collected.
 
 Rules:
 - Make one tool call per turn.
 - Explain your reasoning in 'thought'.
+- The "action" field MUST be exactly one of: get_transaction, get_shap_explanation, walk_graph, counterfactual, finish. Do not use any other value (e.g. NOT "get_transaction_details").
 - When sufficient evidence is collected, set 'action' to 'finish' and provide 'candidate_narrative'.
 - Never hallucinate offshore accounts, unverified shell corporations, or unregistered cartels.
+- Respond with ONLY the JSON object, no other text.
 """
 
 
@@ -39,7 +56,13 @@ class VerityLLMClient:
     """
     Transparent, hand-rolled LLM client for tool calling and reasoning.
     """
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None, model: Optional[str] = None):
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+    ):
         self.api_key = api_key or LLM_API_KEY
         self.base_url = (base_url or LLM_BASE_URL).rstrip("/")
         self.model = model or LLM_MODEL
@@ -51,7 +74,7 @@ class VerityLLMClient:
         tier_origin: str,
         history: List[Dict[str, Any]],
         step_number: int,
-        max_steps: int = 4
+        max_steps: int = 4,
     ) -> Dict[str, Any]:
         """
         Decides the next investigative action based on current evidence.
@@ -61,14 +84,20 @@ class VerityLLMClient:
         # If external LLM is configured, call external chat completions
         if self.api_key:
             try:
-                external_resp = self._call_external_llm(case_id, primary_tx_id, tier_origin, history, step_number)
+                external_resp = self._call_external_llm(
+                    case_id, primary_tx_id, tier_origin, history, step_number
+                )
                 if external_resp:
                     return external_resp
             except Exception as e:
-                logger.warning("External LLM call failed (%s), falling back to builtin reasoner", e)
+                logger.warning(
+                    "External LLM call failed (%s), falling back to builtin reasoner", e
+                )
 
         # Built-in dynamic reasoning engine
-        return self._builtin_reasoning(case_id, primary_tx_id, tier_origin, history, step_number, max_steps)
+        return self._builtin_reasoning(
+            case_id, primary_tx_id, tier_origin, history, step_number, max_steps
+        )
 
     def _call_external_llm(
         self,
@@ -76,11 +105,11 @@ class VerityLLMClient:
         primary_tx_id: str,
         tier_origin: str,
         history: List[Dict[str, Any]],
-        step_number: int
+        step_number: int,
     ) -> Optional[Dict[str, Any]]:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -89,20 +118,39 @@ class VerityLLMClient:
                 "content": (
                     f"Case: {case_id}\nTarget Transaction: {primary_tx_id}\nTier: {tier_origin}\n"
                     f"Current Step: {step_number}\nPast Observations: {json.dumps(history, indent=1)}\n\n"
-                    "Respond with a JSON object: {\"thought\": \"...\", \"action\": \"tool_name\" | \"finish\", \"action_input\": {...}, \"candidate_narrative\": \"...\"}"
-                )
-            }
+                    'Respond with a JSON object: {"thought": "...", "action": "tool_name" | "finish", "action_input": {...}, "candidate_narrative": "..."}'
+                ),
+            },
         ]
         resp = requests.post(
             f"{self.base_url}/chat/completions",
             headers=headers,
-            json={"model": self.model, "messages": messages, "response_format": {"type": "json_object"}},
-            timeout=8.0
+            json={
+                "model": self.model,
+                "messages": messages,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=LLM_TIMEOUT_SECONDS,
         )
-        if resp.status_code == 200:
-            content = resp.json()["choices"][0]["message"]["content"]
-            return json.loads(content)
-        return None
+        if resp.status_code != 200:
+            return None
+
+        content = resp.json()["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+
+        # Some local models hallucinate a near-miss tool name (e.g.
+        # "get_transaction_details"). Treat anything outside the exact
+        # enum as an invalid response so the caller falls back to the
+        # deterministic reasoner for this step, rather than silently
+        # stalling the loop on an action nothing dispatches.
+        if parsed.get("action") not in VALID_ACTIONS:
+            logger.warning(
+                "External LLM returned invalid action %r, falling back to builtin reasoner",
+                parsed.get("action"),
+            )
+            return None
+
+        return parsed
 
     def _builtin_reasoning(
         self,
@@ -111,7 +159,7 @@ class VerityLLMClient:
         tier_origin: str,
         history: List[Dict[str, Any]],
         step_number: int,
-        max_steps: int
+        max_steps: int,
     ) -> Dict[str, Any]:
         """
         Deterministic, transparent reasoning based on observed evidence.
@@ -127,7 +175,7 @@ class VerityLLMClient:
                 ),
                 "action": "get_transaction",
                 "action_input": {"transaction_id": primary_tx_id},
-                "candidate_narrative": None
+                "candidate_narrative": None,
             }
 
         # Retrieve the observation from get_transaction
@@ -144,7 +192,7 @@ class VerityLLMClient:
                 ),
                 "action": "get_shap_explanation",
                 "action_input": {"transaction_id": primary_tx_id},
-                "candidate_narrative": None
+                "candidate_narrative": None,
             }
 
         elif actual_tier == "real_ledger" and "walk_graph" not in tools_called:
@@ -155,8 +203,12 @@ class VerityLLMClient:
                     "Calling walk_graph to inspect single-account balance and velocity baselines."
                 ),
                 "action": "walk_graph",
-                "action_input": {"account_id": account_id, "tier": "real_ledger", "depth": 2},
-                "candidate_narrative": None
+                "action_input": {
+                    "account_id": account_id,
+                    "tier": "real_ledger",
+                    "depth": 2,
+                },
+                "candidate_narrative": None,
             }
 
         elif actual_tier == "synthetic_network" and "walk_graph" not in tools_called:
@@ -167,12 +219,18 @@ class VerityLLMClient:
                     "Calling walk_graph to traverse multi-hop paths and test for FATF circular flows."
                 ),
                 "action": "walk_graph",
-                "action_input": {"account_id": account_id, "tier": "synthetic_network", "depth": 3},
-                "candidate_narrative": None
+                "action_input": {
+                    "account_id": account_id,
+                    "tier": "synthetic_network",
+                    "depth": 3,
+                },
+                "candidate_narrative": None,
             }
 
         # Step 3: Conclude and formulate candidate narrative
-        candidate_sentences = [h["narration_sentence"] for h in history if h.get("narration_sentence")]
+        candidate_sentences = [
+            h["narration_sentence"] for h in history if h.get("narration_sentence")
+        ]
         candidate_narrative = " ".join(candidate_sentences)
 
         return {
@@ -182,45 +240,47 @@ class VerityLLMClient:
             ),
             "action": "finish",
             "action_input": {},
-            "candidate_narrative": candidate_narrative
+            "candidate_narrative": candidate_narrative,
         }
 
     def generate_chat_answer(
-        self,
-        query: str,
-        case_id: Optional[str],
-        trace_events: List[Dict[str, Any]]
+        self, query: str, case_id: Optional[str], trace_events: List[Dict[str, Any]]
     ) -> str:
         """
         Generates conversational analyst responses grounded strictly in trace event evidence.
         """
-        evidence_text = "\n".join([
-            f"- [{e.get('event_id', 'EVT')}]: {e.get('narration_sentence', '')} ({e.get('tool_output_summary', '')})"
-            for e in trace_events
-        ])
-        
+        evidence_text = "\n".join(
+            [
+                f"- [{e.get('event_id', 'EVT')}]: {e.get('narration_sentence', '')} ({e.get('tool_output_summary', '')})"
+                for e in trace_events
+            ]
+        )
+
         # If external LLM available, query it
         if self.api_key:
             try:
-                headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                }
                 messages = [
                     {
                         "role": "system",
                         "content": (
                             "You are Verity's analyst assistant. Answer the user's question strictly using the provided case evidence. "
                             "Do not hallucinate facts or mention unverified offshore entities."
-                        )
+                        ),
                     },
                     {
                         "role": "user",
-                        "content": f"Case ID: {case_id}\nQuery: {query}\n\nEvidence:\n{evidence_text}"
-                    }
+                        "content": f"Case ID: {case_id}\nQuery: {query}\n\nEvidence:\n{evidence_text}",
+                    },
                 ]
                 resp = requests.post(
                     f"{self.base_url}/chat/completions",
                     headers=headers,
                     json={"model": self.model, "messages": messages},
-                    timeout=8.0
+                    timeout=LLM_TIMEOUT_SECONDS,
                 )
                 if resp.status_code == 200:
                     return resp.json()["choices"][0]["message"]["content"].strip()
@@ -229,7 +289,13 @@ class VerityLLMClient:
 
         # Built-in contextual reasoning
         if trace_events:
-            summary = " ".join([e.get("narration_sentence", "") for e in trace_events if e.get("narration_sentence")])
+            summary = " ".join(
+                [
+                    e.get("narration_sentence", "")
+                    for e in trace_events
+                    if e.get("narration_sentence")
+                ]
+            )
             return f"Based on verified investigative evidence for case {case_id or 'active'}: {summary}"
 
         return f"Analyst query received: '{query}'. Evaluated against detection engine baselines with zero ungrounded anomalies."
