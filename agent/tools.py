@@ -48,15 +48,43 @@ def _load_mock_file(filename: str) -> Any:
 def get_transaction(transaction_id: str) -> Dict[str, Any]:
     """
     Retrieves transaction details matching TransactionRecord contract.
+    Routes to the engine that actually owns this ID: the three engines use
+    disjoint ID prefixes (TX-CARD-*/bare digits -> fraud, TX-LEDGER-* ->
+    ledger, TX-SYNTH-* -> typology's synthetic network edges), so a single
+    call always hit the fraud engine here in live mode regardless of tier,
+    silently mis-tiering every ledger/synthetic lookup (fixed during the
+    integration pass — see ARCHITECTURE.md).
     """
+    upper_id = transaction_id.upper()
+
     # 1. Attempt Live API if configured
     if VERITY_ENV == "live":
         try:
-            resp = requests.get(f"{FRAUD_API_URL}/transaction/{transaction_id}", headers=_FRAUD_AUTH_HEADERS, timeout=TOOL_TIMEOUT)
-            if resp.status_code == 200:
-                return resp.json()
+            if "LEDGER" in upper_id:
+                resp = requests.get(f"{LEDGER_API_URL}/transaction/{transaction_id}", timeout=TOOL_TIMEOUT)
+                if resp.status_code == 200:
+                    return resp.json()
+            elif "SYNTH" in upper_id or "SYN" in upper_id:
+                resp = requests.get(f"{TYPOLOGY_API_URL}/network", timeout=TOOL_TIMEOUT)
+                if resp.status_code == 200:
+                    edge = next((e for e in resp.json().get("edges", []) if e.get("id") == transaction_id), None)
+                    if edge:
+                        return {
+                            "id": edge["id"],
+                            "tier": "synthetic_network",
+                            "timestamp": edge.get("timestamp"),
+                            "account_id": edge.get("from_account"),
+                            "amount": float(edge.get("amount", 0.0)),
+                            "direction": "debit",
+                            "raw_narration": edge.get("raw_narration"),
+                            "source_dataset": "synthetic_network.json",
+                        }
+            else:
+                resp = requests.get(f"{FRAUD_API_URL}/transaction/{transaction_id}", headers=_FRAUD_AUTH_HEADERS, timeout=TOOL_TIMEOUT)
+                if resp.status_code == 200:
+                    return resp.json()
         except requests.exceptions.RequestException as e:
-            logger.info("Live fraud API unavailable, falling back to mock: %s", e)
+            logger.info("Live engine API unavailable for %s, falling back to mock: %s", transaction_id, e)
 
     # 2. Mock Mode / Fallback Resolution
     timelines = _load_mock_file("mock_timelines.json") or []

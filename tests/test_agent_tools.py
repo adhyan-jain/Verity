@@ -4,7 +4,47 @@ Verifies strict data contracts compliance, dual-mode behavior, and model-backed 
 """
 
 import pytest
+import agent.tools as tools
 from agent.tools import get_transaction, get_shap_explanation, walk_graph, counterfactual
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, payload):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+def test_live_mode_routes_get_transaction_by_id_prefix(monkeypatch):
+    """
+    Regression test: live-mode get_transaction used to always hit the fraud
+    engine regardless of ID, silently mis-tiering every ledger/synthetic
+    lookup (caught during the integration pass — see ARCHITECTURE.md).
+    It must route by ID prefix to the engine that actually owns that ID.
+    """
+    called_urls = []
+
+    def fake_get(url, *args, **kwargs):
+        called_urls.append(url)
+        if "/ledger/transaction/" in url:
+            return _FakeResponse(200, {"id": "TX-LEDGER-000001", "tier": "real_ledger"})
+        if "/typology/network" in url:
+            return _FakeResponse(200, {"edges": [{"id": "TX-SYNTH-0020", "tier": "synthetic_network", "from_account": "ACC-A", "amount": 100.0, "timestamp": "2026-01-01T00:00:00Z"}]})
+        if "/fraud/transaction/" in url:
+            return _FakeResponse(200, {"id": "TX-CARD-1", "tier": "real_card"})
+        raise AssertionError(f"unexpected URL called: {url}")
+
+    monkeypatch.setattr(tools, "VERITY_ENV", "live")
+    monkeypatch.setattr(tools.requests, "get", fake_get)
+
+    assert get_transaction("TX-LEDGER-000001")["tier"] == "real_ledger"
+    assert get_transaction("TX-SYNTH-0020")["tier"] == "synthetic_network"
+    assert get_transaction("TX-CARD-1")["tier"] == "real_card"
+    assert any("/ledger/transaction/" in u for u in called_urls)
+    assert any("/typology/network" in u for u in called_urls)
+    assert any("/fraud/transaction/" in u for u in called_urls)
 
 
 def test_get_transaction_card():
