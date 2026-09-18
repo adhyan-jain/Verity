@@ -3,8 +3,11 @@ Model Training Module for Fraud Detection.
 Person A: Trains production-grade LightGBM model with SMOTE and 5-fold CV threshold calibration.
 """
 
+import hashlib
+import importlib.metadata
 import os
 import pickle
+import subprocess
 import time
 from typing import Any
 
@@ -21,7 +24,38 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import StratifiedKFold
+
+
+def _git_sha() -> str:
+    try:
+        return (
+            subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+            )
+            .decode()
+            .strip()
+        )
+    except Exception:
+        return "unknown"
+
+
+def _package_versions() -> dict[str, str]:
+    versions = {}
+    for pkg in ("lightgbm", "scikit-learn", "shap", "imbalanced-learn", "pandas"):
+        try:
+            versions[pkg] = importlib.metadata.version(pkg)
+        except importlib.metadata.PackageNotFoundError:
+            versions[pkg] = "unknown"
+    return versions
+
+
+def _file_sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def train_fraud_model(
@@ -34,20 +68,28 @@ def train_fraud_model(
     """
     Trains fraud classification model on creditcard.csv using SMOTE oversampling
     and LightGBM, calibrated using 5-fold out-of-fold cross-validation.
+
+    Uses a time-based train/test split (test = most recent 20% by the `Time`
+    column) rather than a random split, since the model is meant to generalize
+    forward in time and a random/IID split would leak future transactions into
+    training.
     """
     print(f"Training production fraud detection model from {data_path}...")
     df = pd.read_csv(data_path)
+    dataset_hash = _file_sha256(data_path)
+    df = df.sort_values("Time").reset_index(drop=True)
     X = df.drop(columns=["Class"])
     y = df["Class"]
     feature_names = X.columns.tolist()
 
-    # Stratified train/test split (80/20)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=random_state, stratify=y
-    )
+    # Time-based train/test split (80/20): test is the most recent 20% of
+    # transactions by `Time`, train is everything before it.
+    split_idx = int(len(df) * 0.8)
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
     print(
-        f"Dataset split: {len(X_train)} train, {len(X_test)} test (Test fraud: {y_test.sum()})"
+        f"Dataset split (time-based): {len(X_train)} train, {len(X_test)} test (Test fraud: {y_test.sum()})"
     )
 
     # 5-fold Stratified Cross Validation on Training Data to compute out-of-fold threshold
@@ -137,22 +179,48 @@ def train_fraud_model(
         n=min(200, len(X_train)), random_state=random_state
     )
 
+    model_version = f"v1.2-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
     artifact = {
         "model": clf,
         "explainer": explainer,
         "feature_names": feature_names,
         "threshold": calibrated_threshold,
         "metrics": metrics,
-        "model_version": "v1.1-prod-calibrated",
-        "strategy": "SMOTE (0.05) + LightGBM + 5-Fold Calibrated Threshold",
+        "model_version": model_version,
+        "strategy": "SMOTE (0.05) + LightGBM + 5-Fold Calibrated Threshold + Time-based Split",
         "background_sample": background_sample,
+        "provenance": {
+            "git_sha": _git_sha(),
+            "data_path": data_path,
+            "data_sha256": dataset_hash,
+            "package_versions": _package_versions(),
+            "trained_at": model_version,
+        },
     }
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    # Write a versioned, immutable artifact alongside the "current" pointer file
+    # so a bad training run never destroys the last known-good model outright.
+    versioned_dir = os.path.join(os.path.dirname(output_path), "versions")
+    os.makedirs(versioned_dir, exist_ok=True)
+    versioned_path = os.path.join(versioned_dir, f"model_{model_version}.pkl")
+    with open(versioned_path, "wb") as f:
+        pickle.dump(artifact, f)
+    artifact_hash = _file_sha256(versioned_path)
+
+    if os.path.exists(output_path):
+        backup_path = output_path + ".bak"
+        os.replace(output_path, backup_path)
+        print(f"Backed up previous artifact to {backup_path}")
+
     with open(output_path, "wb") as f:
         pickle.dump(artifact, f)
+    with open(output_path + ".sha256", "w") as f:
+        f.write(artifact_hash)
 
     print(f"Production model artifact successfully saved to {output_path}")
+    print(f"Versioned copy saved to {versioned_path}")
     return artifact
 
 
