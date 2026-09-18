@@ -191,10 +191,6 @@ class VerityLLMClient:
     Supports OpenRouter, OpenAI, and local built-in fallback.
     Never leaks or logs API keys.
     """
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None, model: Optional[str] = None):
-        self.api_key = api_key or LLM_API_KEY
-        self.base_url = (base_url or LLM_BASE_URL).rstrip("/")
-        self.model = model or LLM_MODEL
     def __init__(
         self,
         api_key: Optional[str] = None,

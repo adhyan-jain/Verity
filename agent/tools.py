@@ -248,20 +248,20 @@ def get_shap_explanation(transaction_id: str) -> Dict[str, Any]:
         except requests.exceptions.RequestException as e:
             logger.info("Live fraud explain API unavailable, falling back to mock: %s", e)
 
-    # 2. Mock Mode / Fallback Resolution
+    # 2. Authoritative Fraud Model Inference
+    try:
+        from engines.fraud.explain import explain_transaction, load_fraud_artifact
+        artifact = load_fraud_artifact()
+        feat_dict = get_transaction_features(transaction_id)
+        return explain_transaction(transaction_id=transaction_id, features=feat_dict, artifact=artifact)
+    except Exception as e:
+        logger.debug("Authoritative explainer unavailable (%s), falling back to mock: %s", type(e).__name__, e)
+
+    # 3. Mock Mode / Fallback Resolution
     explanations = _load_mock_file("mock_fraud_explanations.json") or []
     for exp in explanations:
         if exp.get("transaction_id") == transaction_id:
             return exp
-
-    # 3. Try authoritative Person A LightGBM explainer if artifact is present
-    try:
-        from engines.fraud.explain import explain_transaction as person_a_explain, load_fraud_artifact
-        artifact = load_fraud_artifact()
-        feat_dict = get_transaction_features(transaction_id)
-        return person_a_explain(transaction_id=transaction_id, features=feat_dict, model_artifact=artifact)
-    except Exception as e:
-        logger.debug("Person A explainer unavailable (%s), using ModelEngine fallback", e)
 
     # 4. Fallback to calibrated ModelEngine
     engine = get_model_engine()
@@ -394,11 +394,11 @@ def counterfactual(transaction_id: str, parameter_overrides: Dict[str, Any]) -> 
     # 2. Extract transaction's exact features (never bleed features across transactions)
     base_features = get_transaction_features(transaction_id)
 
-    # 3. Try authoritative Person A LightGBM explainer first
+    # 3. Authoritative Fraud Model Counterfactual
     try:
-        from engines.fraud.explain import explain_transaction as person_a_explain, load_fraud_artifact
+        from engines.fraud.explain import explain_transaction, load_fraud_artifact
         artifact = load_fraud_artifact()
-        orig_exp = person_a_explain(transaction_id=transaction_id, features=base_features, model_artifact=artifact)
+        orig_exp = explain_transaction(transaction_id=transaction_id, features=base_features, artifact=artifact, top_n=30)
 
         mod_features = dict(base_features)
         for k, v in parameter_overrides.items():
@@ -408,7 +408,7 @@ def counterfactual(transaction_id: str, parameter_overrides: Dict[str, Any]) -> 
             except (ValueError, TypeError):
                 pass
 
-        recalc_exp = person_a_explain(transaction_id=transaction_id, features=mod_features, model_artifact=artifact)
+        recalc_exp = explain_transaction(transaction_id=transaction_id, features=mod_features, artifact=artifact, top_n=30)
 
         orig_score = orig_exp["risk_score"]
         recalc_score = recalc_exp["risk_score"]
@@ -421,9 +421,9 @@ def counterfactual(transaction_id: str, parameter_overrides: Dict[str, Any]) -> 
         for k in parameter_overrides:
             norm_k = "Amount" if k.lower() == "amount" else ("Time" if k.lower() == "time" else k)
             if norm_k in orig_contribs and norm_k in recalc_contribs:
-                deltas[norm_k] = round(recalc_contribs[norm_k] - orig_contribs[norm_k], 3)
+                deltas[norm_k] = round(recalc_contribs[norm_k] - orig_contribs[norm_k], 4)
             else:
-                deltas[norm_k] = round(recalc_score - orig_score, 3)
+                deltas[norm_k] = round(recalc_score - orig_score, 4)
 
         return {
             "transaction_id": transaction_id,
@@ -435,12 +435,12 @@ def counterfactual(transaction_id: str, parameter_overrides: Dict[str, Any]) -> 
             "feature_attribution_deltas": deltas,
             "explanation": (
                 f"Authoritative model counterfactual evaluation: Overrides {parameter_overrides} shifted the model "
-                f"risk probability from {orig_score:.2f} ({orig_verdict}) to {recalc_score:.2f} ({recalc_verdict}) "
+                f"risk probability from {orig_score:.4f} ({orig_verdict}) to {recalc_score:.4f} ({recalc_verdict}) "
                 f"using model {orig_exp.get('model_version')}."
             )
         }
     except Exception as e:
-        logger.debug("Person A model unavailable for counterfactual (%s), using ModelEngine fallback", e)
+        logger.debug("Authoritative model unavailable for counterfactual (%s), using ModelEngine fallback", e)
 
     # 4. ModelEngine calibrated fallback
     engine = get_model_engine()

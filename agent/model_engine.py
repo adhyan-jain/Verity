@@ -1,88 +1,102 @@
 """
-Model-Backed Scoring & Counterfactual Engine.
-Person C: Evaluates transactions and counterfactuals using real model inference
-(calibrated logistic regression trained on creditcard.csv) rather than hardcoded step thresholds.
+Authoritative Model-Backed Scoring & Counterfactual Engine.
+Unifies agent scoring and counterfactual inference directly on the authoritative trained ML model
+(engines/fraud/model.pkl), removing all duplicate hardcoded logistic regression formulas.
 """
 
-import os
-import json
-import math
-from typing import Dict, Any, Tuple, Optional
+import logging
+from typing import Any, Dict, Optional, Tuple
 
-SPEC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model_spec.json")
+from engines.fraud.explain import explain_transaction, load_fraud_artifact
 
-# Default baseline feature vector for TX-CARD-9842 (high risk off-hours transaction)
+logger = logging.getLogger("verity.agent.model_engine")
+
+# Baseline high-risk transaction feature vector (derived from creditcard.csv row 197586)
 DEFAULT_TX_FEATURES: Dict[str, float] = {
-    "Time": 12120.0,    # ~ 03:22 AM
-    "Amount": 4850.0,
-    "V1": -3.043541, "V2": -3.157307, "V3": 1.088463, "V4": 2.288644,
-    "V5": 1.359805, "V6": -1.064823, "V7": 0.325574, "V8": -0.067794,
-    "V9": -0.270953, "V10": -0.838587, "V11": -0.414575, "V12": -0.503141,
-    "V13": 0.676502, "V14": -0.100000, "V15": -0.760756, "V16": -1.140460,
-    "V17": -0.284928, "V18": -0.124804, "V19": 0.401764, "V20": 2.102339,
-    "V21": 0.661696, "V22": 0.435477, "V23": 1.375966, "V24": -0.293803,
-    "V25": 0.279798, "V26": -0.145362, "V27": -0.252773, "V28": 0.035764
+    "Time": 132086.0,
+    "V1": -0.361428,
+    "V2": 1.133472,
+    "V3": -2.700000,
+    "V4": -0.283073,
+    "V5": 0.371452,
+    "V6": -0.574680,
+    "V7": 4.031513,
+    "V8": -0.934398,
+    "V9": -0.768255,
+    "V10": -2.248115,
+    "V11": -0.482409,
+    "V12": -0.690550,
+    "V13": 0.181275,
+    "V14": -2.372552,
+    "V15": -0.006868,
+    "V16": 0.146399,
+    "V17": 1.759314,
+    "V18": 1.083040,
+    "V19": -0.391048,
+    "V20": -0.025862,
+    "V21": 0.110815,
+    "V22": 0.563861,
+    "V23": -0.408436,
+    "V24": -0.880079,
+    "V25": 1.408392,
+    "V26": -0.137402,
+    "V27": -0.001250,
+    "V28": -0.182751,
+    "Amount": 1000.0,
 }
 
 
 class ModelEngine:
-    def __init__(self, spec_path: Optional[str] = None):
-        target = spec_path or SPEC_PATH
-        if os.path.exists(target):
-            with open(target, "r", encoding="utf-8") as f:
-                self.spec = json.load(f)
-        else:
-            # Fallback coefficients
-            self.spec = {
-                "features": list(DEFAULT_TX_FEATURES.keys()),
-                "means": [0.0] * 30,
-                "scales": [1.0] * 30,
-                "intercept": 0.377,
-                "coefficients": [0.0] * 30
-            }
+    """
+    Thin adapter that routes scoring and counterfactual queries directly to the
+    authoritative fraud ML model artifact and its SHAP TreeExplainer.
+    """
 
-        self.features = self.spec["features"]
-        self.means = {k: m for k, m in zip(self.features, self.spec["means"])}
-        self.scales = {k: (s if s != 0 else 1.0) for k, s in zip(self.features, self.spec["scales"])}
-        self.coefficients = {k: c for k, c in zip(self.features, self.spec["coefficients"])}
-        self.intercept = self.spec.get("intercept", 0.0)
+    def __init__(self, artifact_path: Optional[str] = None):
+        self.artifact_path = artifact_path or "engines/fraud/model.pkl"
+        self._artifact: Optional[Dict[str, Any]] = None
 
-    def score_features(self, feature_dict: Dict[str, float]) -> Tuple[float, str, Dict[str, float]]:
+    @property
+    def artifact(self) -> Dict[str, Any]:
+        if self._artifact is None:
+            self._artifact = load_fraud_artifact(self.artifact_path)
+        return self._artifact
+
+    @property
+    def features(self) -> list[str]:
+        return self.artifact["feature_names"]
+
+    def score_features(
+        self, feature_dict: Dict[str, float]
+    ) -> Tuple[float, str, Dict[str, float]]:
         """
-        Computes model inference using calibrated logistic regression:
-        z = intercept + sum(coef_i * (x_i - mean_i) / scale_i)
-        probability = 1 / (1 + exp(-z))
+        Computes model inference and SHAP attributions using the authoritative trained model.
+        Returns:
+            (risk_score, verdict, contributions_dict)
         """
-        z = self.intercept
-        contributions: Dict[str, float] = {}
+        explanation = explain_transaction(
+            features=feature_dict,
+            transaction_id="engine-eval",
+            artifact=self.artifact,
+            top_n=len(self.features),
+        )
 
-        for feat in self.features:
-            val = float(feature_dict.get(feat, self.means.get(feat, 0.0)))
-            mean = self.means.get(feat, 0.0)
-            scale = self.scales.get(feat, 1.0)
-            coef = self.coefficients.get(feat, 0.0)
-
-            scaled_val = (val - mean) / scale
-            contrib = coef * scaled_val
-            z += contrib
-            contributions[feat] = contrib
-
-        # Numerical stability clamp for sigmoid
-        z_clamped = max(-20.0, min(20.0, z))
-        prob = 1.0 / (1.0 + math.exp(-z_clamped))
-        risk_score = round(prob, 2)
-        verdict = "flagged" if risk_score >= 0.50 else "clear"
-
+        risk_score = float(explanation["risk_score"])
+        verdict = str(explanation["verdict"])
+        contributions = {
+            f["feature"]: float(f["contribution"])
+            for f in explanation.get("top_factors", [])
+        }
         return risk_score, verdict, contributions
 
     def evaluate_counterfactual(
         self,
         base_features: Dict[str, float],
-        parameter_overrides: Dict[str, Any]
+        parameter_overrides: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        Evaluates a counterfactual query by re-running the mathematical model
-        on the modified feature vector.
+        Evaluates a counterfactual query by re-running the authoritative trained model
+        on the modified feature vector and computing attribution deltas.
         """
         # 1. Base inference
         orig_score, orig_verdict, orig_contrib = self.score_features(base_features)
@@ -90,23 +104,36 @@ class ModelEngine:
         # 2. Modify feature vector
         modified_features = dict(base_features)
         for k, v in parameter_overrides.items():
-            norm_k = "Amount" if k.lower() == "amount" else ("Time" if k.lower() == "time" else k)
-            if norm_k in modified_features:
+            norm_k = (
+                "Amount"
+                if k.lower() == "amount"
+                else ("Time" if k.lower() == "time" else k)
+            )
+            if norm_k in modified_features or norm_k in self.features:
                 try:
                     modified_features[norm_k] = float(v)
                 except (ValueError, TypeError):
                     pass
 
         # 3. Model inference on modified features
-        recalc_score, recalc_verdict, recalc_contrib = self.score_features(modified_features)
+        recalc_score, recalc_verdict, recalc_contrib = self.score_features(
+            modified_features
+        )
 
         # Calculate exact contribution delta for modified features
         deltas = {}
         for k in parameter_overrides:
-            norm_k = "Amount" if k.lower() == "amount" else ("Time" if k.lower() == "time" else k)
+            norm_k = (
+                "Amount"
+                if k.lower() == "amount"
+                else ("Time" if k.lower() == "time" else k)
+            )
             if norm_k in orig_contrib and norm_k in recalc_contrib:
-                deltas[norm_k] = round(recalc_contrib[norm_k] - orig_contrib[norm_k], 3)
+                deltas[norm_k] = round(recalc_contrib[norm_k] - orig_contrib[norm_k], 4)
+            else:
+                deltas[norm_k] = round(recalc_score - orig_score, 4)
 
+        model_ver = self.artifact.get("model_version", "authoritative-ml")
         return {
             "original_risk_score": orig_score,
             "recalculated_risk_score": recalc_score,
@@ -115,10 +142,10 @@ class ModelEngine:
             "parameter_overrides": parameter_overrides,
             "feature_attribution_deltas": deltas,
             "explanation": (
-                f"Model-backed counterfactual inference: Applying overrides {parameter_overrides} shifted the model "
-                f"risk probability from {orig_score:.2f} to {recalc_score:.2f} "
-                f"(verdict changed from {orig_verdict} to {recalc_verdict}) based on feature attribution delta {deltas}."
-            )
+                f"Authoritative model counterfactual inference: Applying overrides {parameter_overrides} shifted the model "
+                f"risk probability from {orig_score:.4f} ({orig_verdict}) to {recalc_score:.4f} ({recalc_verdict}) "
+                f"using model version {model_ver} with feature attribution deltas {deltas}."
+            ),
         }
 
 
