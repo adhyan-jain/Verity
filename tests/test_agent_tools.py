@@ -83,3 +83,4 @@ def test_counterfactual_amount_increase():
     result = counterfactual("TX-CARD-9842", {"Amount": 15000.0})
     assert result["recalculated_risk_score"] > 0.8
     assert result["recalculated_verdict"] == "flagged"
+

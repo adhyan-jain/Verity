@@ -76,3 +76,4 @@ def test_investigation_loop_streaming_callback():
     assert len(streamed_events) == 2
     assert streamed_events[0]["tool_called"] == "get_transaction"
     assert streamed_events[1]["tool_called"] == "get_shap_explanation"
+

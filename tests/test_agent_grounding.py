@@ -71,3 +71,4 @@ def test_empty_raw_narrative_uses_trace_events():
 
     narrative, _ = ground_narrative(trace_events, raw_narrative="")
     assert narrative == "Traversed synthetic network finding circular fund flow."
+

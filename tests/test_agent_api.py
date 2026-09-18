@@ -72,3 +72,4 @@ def test_api_chat_cached_question():
     assert data["is_fallback"] is True
     assert "TX-CARD-9842" in data["response"]
     assert "Using a prepared benchmark answer" in data["fallback_notice"]
+

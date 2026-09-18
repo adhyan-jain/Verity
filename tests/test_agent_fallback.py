@@ -54,3 +54,4 @@ def test_latency_guard_timeout():
     res = execute_with_latency_guard(slow_task, query="why was this flagged", timeout_seconds=0.0)
     assert res.get("is_fallback") is True
     assert "Execution exceeded latency limit" in res.get("fallback_reason", "")
+
