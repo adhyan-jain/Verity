@@ -1,0 +1,71 @@
+[
+  {
+    "test_id": "ADV-001",
+    "description": "Benign corporate payroll burst - 1 to N high-velocity disbursement",
+    "expected_verdict": "benign",
+    "nodes": [
+      {"id": "CORP-PAYROLL-01", "name": "Global Tech Corp", "risk_rating": "low"},
+      {"id": "EMP-01", "name": "Alice Employee", "risk_rating": "low"},
+      {"id": "EMP-02", "name": "Bob Employee", "risk_rating": "low"},
+      {"id": "EMP-03", "name": "Charlie Employee", "risk_rating": "low"}
+    ],
+    "edges": [
+      {"id": "TX-ADV-01", "from_account": "CORP-PAYROLL-01", "to_account": "EMP-01", "amount": 4500.0, "timestamp": "2026-09-18T09:00:00Z"},
+      {"id": "TX-ADV-02", "from_account": "CORP-PAYROLL-01", "to_account": "EMP-02", "amount": 4800.0, "timestamp": "2026-09-18T09:01:00Z"},
+      {"id": "TX-ADV-03", "from_account": "CORP-PAYROLL-01", "to_account": "EMP-03", "amount": 4200.0, "timestamp": "2026-09-18T09:02:00Z"}
+    ],
+    "test_rationale": "Fan-out pattern from corporate payroll should not trigger smurfing/structuring (which requires fan-in below threshold)."
+  },
+  {
+    "test_id": "ADV-002",
+    "description": "True FATF Structuring - 4 fan-in smurf accounts sending $9,700 to single collector",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      {"id": "SMURF-A", "name": "Smurf Account Alpha", "risk_rating": "high"},
+      {"id": "SMURF-B", "name": "Smurf Account Beta", "risk_rating": "high"},
+      {"id": "SMURF-C", "name": "Smurf Account Gamma", "risk_rating": "high"},
+      {"id": "SMURF-D", "name": "Smurf Account Delta", "risk_rating": "high"},
+      {"id": "COLLECTOR-X", "name": "Shell Entity Collector", "risk_rating": "critical"}
+    ],
+    "edges": [
+      {"id": "TX-ADV-11", "from_account": "SMURF-A", "to_account": "COLLECTOR-X", "amount": 9750.0, "timestamp": "2026-09-18T10:00:00Z"},
+      {"id": "TX-ADV-12", "from_account": "SMURF-B", "to_account": "COLLECTOR-X", "amount": 9800.0, "timestamp": "2026-09-18T11:15:00Z"},
+      {"id": "TX-ADV-13", "from_account": "SMURF-C", "to_account": "COLLECTOR-X", "amount": 9650.0, "timestamp": "2026-09-18T12:30:00Z"},
+      {"id": "TX-ADV-14", "from_account": "SMURF-D", "to_account": "COLLECTOR-X", "amount": 9900.0, "timestamp": "2026-09-18T14:00:00Z"}
+    ],
+    "test_rationale": "Direct violation of FATF Rec. 10: 4 sub-$10k deposits within 4 hours totalling $39,100."
+  },
+  {
+    "test_id": "ADV-003",
+    "description": "True FATF Round-Tripping - 3-hop closed loop retaining 94% capital in 30 hours",
+    "expected_verdict": "flagged",
+    "expected_typology": "round_tripping",
+    "nodes": [
+      {"id": "NODE-RT-1", "name": "Domestic Originator Inc", "risk_rating": "high"},
+      {"id": "NODE-RT-2", "name": "BVI Holding Ltd", "risk_rating": "critical"},
+      {"id": "NODE-RT-3", "name": "Cayman Trading Corp", "risk_rating": "critical"}
+    ],
+    "edges": [
+      {"id": "TX-ADV-21", "from_account": "NODE-RT-1", "to_account": "NODE-RT-2", "amount": 100000.0, "timestamp": "2026-09-18T08:00:00Z"},
+      {"id": "TX-ADV-22", "from_account": "NODE-RT-2", "to_account": "NODE-RT-3", "amount": 97000.0, "timestamp": "2026-09-18T18:00:00Z"},
+      {"id": "TX-ADV-23", "from_account": "NODE-RT-3", "to_account": "NODE-RT-1", "amount": 94000.0, "timestamp": "2026-09-19T14:00:00Z"}
+    ],
+    "test_rationale": "Directed cycle matching circular laundering with 94% volume conservation within 30 hours."
+  },
+  {
+    "test_id": "ADV-004",
+    "description": "Benign staged escrow with long dwell times (>7 days)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {"id": "ESCROW-01", "name": "Real Estate Escrow", "risk_rating": "low"},
+      {"id": "BUILDER-01", "name": "Prime Constructions", "risk_rating": "low"},
+      {"id": "SUPPLIER-01", "name": "Steel Suppliers Ltd", "risk_rating": "low"}
+    ],
+    "edges": [
+      {"id": "TX-ADV-31", "from_account": "ESCROW-01", "to_account": "BUILDER-01", "amount": 50000.0, "timestamp": "2026-09-01T10:00:00Z"},
+      {"id": "TX-ADV-32", "from_account": "BUILDER-01", "to_account": "SUPPLIER-01", "amount": 48000.0, "timestamp": "2026-09-15T10:00:00Z"}
+    ],
+    "test_rationale": "14-day inter-hop latency represents standard construction invoicing, not rapid layering."
+  }
+]
