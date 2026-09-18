@@ -1326,14 +1326,15 @@ function FastForwardIcon() {
 // Master Unified AML Operations Cockpit (Screens 1–5 in Palantir/Bloomberg Layout)
 // ============================================================================
 export function UnifiedAmlCockpit() {
-  const [selectedAccountId, setSelectedAccountId] = useState<string>(() => {
-    if (typeof window === "undefined") return "409000493210";
-    return window.localStorage.getItem("verity.selectedAccountId") || "409000493210";
-  });
-  const [selectedTxId, setSelectedTxId] = useState<string | undefined>(() => {
-    if (typeof window === "undefined") return "TX-LEDGER-114686";
-    return window.localStorage.getItem("verity.selectedTxId") || "TX-LEDGER-114686";
-  });
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("409000493210");
+  const [selectedTxId, setSelectedTxId] = useState<string | undefined>("TX-LEDGER-114686");
+
+  useEffect(() => {
+    const savedAccountId = window.localStorage.getItem("verity.selectedAccountId");
+    const savedTxId = window.localStorage.getItem("verity.selectedTxId");
+    if (savedAccountId) setSelectedAccountId(savedAccountId);
+    if (savedTxId) setSelectedTxId(savedTxId);
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem("verity.selectedAccountId", selectedAccountId);
