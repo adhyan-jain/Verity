@@ -5,6 +5,10 @@
 # Raw Datasets & Data Files (Tracked for team access during sprint)
 # Note: Re-enable exclusions when datasets are hosted externally
 
+# Runtime cache
+data/cache/
+
+
 
 # Machine Learning Models & Checkpoints
 *.pkl
