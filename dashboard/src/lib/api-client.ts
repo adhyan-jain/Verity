@@ -298,3 +298,105 @@ export async function askCounterfactualOrChat(
     fallback_notice: result.fallback_notice,
   };
 }
+
+export type SentenceCitation = {
+  sentence: string;
+  event_id: string | null;
+  tool_called: string | null;
+  timestamp: string | null;
+};
+
+export type ValidatorNote = {
+  sentence: string;
+  reason: string;
+};
+
+export type ReasonSuggestion = {
+  code: string;
+  label: string;
+  basis: string;
+};
+
+export type StrExportableData = {
+  case_id: string;
+  tier_origin: string;
+  primary_transaction_id: string;
+  risk_score: number;
+  account_ids: string[];
+  transaction_ids: string[];
+  amounts_cited: string[];
+  date_range: { start: string | null; end: string | null };
+  reasons_for_suspicion: ReasonSuggestion[];
+  missing_sections: string[];
+  generated_at: string;
+};
+
+export type StrDraft = {
+  narrative: string;
+  sentences_with_citations: SentenceCitation[];
+  validator_notes: ValidatorNote[];
+  exportable_data: StrExportableData;
+};
+
+function strDraftRequestBody(investigation: Case) {
+  return JSON.stringify({
+    tier_origin: investigation.tier_origin,
+    primary_transaction_id: investigation.primary_transaction_id,
+    risk_score: investigation.risk_score,
+    trace_events: investigation.trace_events,
+    narrative: investigation.narrative,
+  });
+}
+
+/**
+ * Drafts an STR from a completed investigation. Stateless on the server —
+ * nothing is stored, so this always reflects exactly the `investigation`
+ * passed in; re-running the investigation and calling this again yields a
+ * fresh draft, never a stale cached one.
+ */
+export async function generateStrDraft(caseId: string, investigation: Case): Promise<StrDraft> {
+  return fetchJson<StrDraft>(
+    `${AGENT_BASE}/api/v1/agent/draft_str/${encodeURIComponent(caseId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": AGENT_API_KEY },
+      body: strDraftRequestBody(investigation),
+    },
+    REQUEST_TIMEOUT_MS,
+  );
+}
+
+/** Fetches the same draft rendered as a .docx and triggers a browser download. Throws on failure — caller shows an inline error rather than a silent no-op. */
+export async function downloadStrDraftDocx(caseId: string, investigation: Case): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response: globalThis.Response;
+  try {
+    response = await fetch(
+      `${AGENT_BASE}/api/v1/agent/draft_str/${encodeURIComponent(caseId)}/docx`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-API-Key": AGENT_API_KEY },
+        body: strDraftRequestBody(investigation),
+        signal: controller.signal,
+      },
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!response.ok) throw new Error(`STR docx export -> HTTP ${response.status}`);
+
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const filenameMatch = /filename="([^"]+)"/.exec(disposition);
+  const filename = filenameMatch?.[1] ?? `STR_${caseId}.docx`;
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}

@@ -5,6 +5,8 @@ import {
   CircleDot,
   Clock3,
   FileCheck2,
+  FileText,
+  Download,
   Network,
   Search,
   Send,
@@ -25,11 +27,14 @@ import {
   fetchFirstLedgerAccountId,
   fetchLiveTimeline,
   fetchLiveTypologyNetwork,
+  generateStrDraft,
+  downloadStrDraftDocx,
   type EngineStatus,
   type Case,
   type FraudExplanation,
   type LedgerTimeline,
   type TypologyNetwork,
+  type StrDraft,
 } from "../lib/api-client";
 
 type Filter = "all" | "real_card" | "real_ledger" | "synthetic_network";
@@ -624,10 +629,12 @@ function ReasoningTrace({
   item,
   investigation,
   loading,
+  highlightedEventId,
 }: {
   item: CaseFile;
   investigation: Case | null;
   loading: boolean;
+  highlightedEventId?: string | null;
 }) {
   const traceRows = investigation
     ? investigation.trace_events.map((evt) => ({
@@ -662,7 +669,11 @@ function ReasoningTrace({
       </div>
       <div className="mt-4 space-y-0">
         {traceRows.map((event, index) => (
-          <article key={event.id} className="trace-row">
+          <article
+            key={event.id}
+            id={`trace-row-${event.id}`}
+            className={`trace-row ${event.id === highlightedEventId ? "ring-2 ring-signal ring-offset-2 ring-offset-panel rounded-md" : ""}`}
+          >
             <div className="trace-index">{index + 1}</div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[9px] uppercase text-muted-foreground">
@@ -685,7 +696,6 @@ function ReasoningTrace({
 }
 
 function QueryPanel({
-
   item,
   onScoreChange,
 }: {
@@ -782,6 +792,161 @@ function QueryPanel({
   );
 }
 
+function StrDraftPanel({
+  item,
+  investigation,
+  onCiteClick,
+}: {
+  item: CaseFile;
+  investigation: Case | null;
+  onCiteClick: (eventId: string | null) => void;
+}) {
+  const [draft, setDraft] = useState<StrDraft | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const generate = async () => {
+    if (!investigation) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await generateStrDraft(item.id, investigation);
+      setDraft(result);
+    } catch {
+      setError("Could not generate an STR draft — the agent service may be unavailable.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const download = async () => {
+    if (!investigation) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      await downloadStrDraftDocx(item.id, investigation);
+    } catch {
+      setError("Could not download the DOCX export.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <section className="rounded-md bg-panel p-4 shadow-soft md:p-5">
+      <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div>
+          <div className="eyebrow flex items-center gap-1.5">
+            <FileText className="size-3.5" /> STR draft · optional
+          </div>
+          <h2 className="mt-1 font-display text-xl font-bold">Suspicious Transaction Report</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Draft for analyst review only — not a filing, not submitted to FIU-IND, not legal
+            advice.
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <ActionButton variant="quiet" onClick={generate}>
+            <FileText className="size-3.5" />
+            {loading ? "Generating…" : draft ? "Regenerate STR Draft" : "Generate STR Draft"}
+          </ActionButton>
+          {draft && (
+            <ActionButton onClick={download}>
+              <Download className="size-3.5" />
+              {downloading ? "Preparing…" : "Download as DOCX"}
+            </ActionButton>
+          )}
+        </div>
+      </div>
+
+      {!investigation && !loading && (
+        <p className="mt-4 text-xs text-muted-foreground">
+          Run an investigation first — the draft is built from its trace events and is always
+          regenerated fresh, never stored.
+        </p>
+      )}
+      {error && <p className="mt-3 text-sm text-signal">{error}</p>}
+
+      {draft && (
+        <div className="mt-4 space-y-5">
+          <div>
+            <div className="eyebrow">Grounds of suspicion — narrative</div>
+            <div className="mt-2 space-y-2">
+              {draft.sentences_with_citations.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No sentences passed independent grounding verification for this case.
+                </p>
+              )}
+              {draft.sentences_with_citations.map((cited, idx) => (
+                <p key={idx} className="text-sm leading-relaxed">
+                  {cited.sentence}{" "}
+                  <button
+                    type="button"
+                    title={`Jump to source: ${cited.event_id ?? "unknown"} (${cited.tool_called ?? "?"})`}
+                    onClick={() => {
+                      onCiteClick(cited.event_id);
+                      document
+                        .getElementById(`trace-row-${cited.event_id}`)
+                        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }}
+                    className="rounded bg-signal/15 px-1.5 py-0.5 font-mono text-[9px] uppercase text-signal hover:bg-signal/25"
+                  >
+                    {cited.event_id ?? "?"}
+                  </button>
+                </p>
+              ))}
+            </div>
+          </div>
+
+          {draft.exportable_data.reasons_for_suspicion.length > 0 && (
+            <div>
+              <div className="eyebrow">Suggested reasons for suspicion</div>
+              <ul className="mt-2 space-y-1">
+                {draft.exportable_data.reasons_for_suspicion.map((reason) => (
+                  <li key={reason.code} className="text-sm">
+                    <span className="font-mono text-[9px] uppercase text-signal">
+                      [{reason.code}]
+                    </span>{" "}
+                    {reason.label} — <span className="text-muted-foreground">{reason.basis}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div>
+            <div className="eyebrow">Validator notes</div>
+            {draft.validator_notes.length === 0 ? (
+              <p className="mt-2 text-sm text-teal">
+                No sentences were rejected by the independent grounding validator.
+              </p>
+            ) : (
+              <ul className="mt-2 space-y-1.5">
+                {draft.validator_notes.map((note, idx) => (
+                  <li key={idx} className="rounded border border-amber/30 bg-amber/10 p-2 text-sm">
+                    <span className="font-mono text-[9px] uppercase text-amber">Rejected</span> "
+                    {note.sentence}" — {note.reason}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div>
+            <div className="eyebrow">Sections not populated</div>
+            <ul className="mt-2 space-y-1 font-mono text-[10px] leading-relaxed text-muted-foreground">
+              {draft.exportable_data.missing_sections.map((gap, idx) => (
+                <li key={idx}>• {gap}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function VerityWorkspace() {
   const [selectedId, setSelectedId] = useState(CASES[0].id);
   const [decision, setDecision] = useState<string | null>(null);
@@ -793,6 +958,7 @@ export function VerityWorkspace() {
     typology: false,
   });
   const [live, setLive] = useState<LiveEvidence>(EMPTY_LIVE_EVIDENCE);
+  const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
 
   const item = useMemo(
     () => CASES.find((entry) => entry.id === selectedId) ?? CASES[0],
@@ -873,6 +1039,7 @@ export function VerityWorkspace() {
             setSelectedId(id);
             setDecision(null);
             setCounterfactualRisk(null);
+            setHighlightedEventId(null);
           }}
         />
         <main className="min-w-0 space-y-4">
@@ -880,9 +1047,15 @@ export function VerityWorkspace() {
             <div className="flex items-start gap-3 rounded-md border border-amber/40 bg-amber/10 p-4 text-xs text-amber font-mono shadow-sm">
               <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber animate-pulse" />
               <div className="leading-relaxed">
-                <span className="font-bold uppercase tracking-wider">Showing Cached Data — Live Service Unavailable:</span>{" "}
-                The workspace is rendering pre-computed benchmark fixtures because backend microservices are offline. Run{" "}
-                <code className="rounded bg-amber/20 px-1.5 py-0.5 font-bold text-amber">python scripts/dev_up.py</code> to connect live LightGBM/SHAP and FATF traversal engines (Ports 8000–8003).
+                <span className="font-bold uppercase tracking-wider">
+                  Showing Cached Data — Live Service Unavailable:
+                </span>{" "}
+                The workspace is rendering pre-computed benchmark fixtures because backend
+                microservices are offline. Run{" "}
+                <code className="rounded bg-amber/20 px-1.5 py-0.5 font-bold text-amber">
+                  python scripts/dev_up.py
+                </code>{" "}
+                to connect live LightGBM/SHAP and FATF traversal engines (Ports 8000–8003).
               </div>
             </div>
           )}
@@ -898,7 +1071,12 @@ export function VerityWorkspace() {
             <Factors item={item} liveFactors={live.factors} />
           </div>
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)]">
-            <ReasoningTrace item={item} investigation={live.investigation} loading={live.loading} />
+            <ReasoningTrace
+              item={item}
+              investigation={live.investigation}
+              loading={live.loading}
+              highlightedEventId={highlightedEventId}
+            />
             <div className="space-y-4">
               <section className="rounded-md bg-panel p-4 shadow-soft md:p-5">
                 <div className="eyebrow">Analyst disposition</div>
@@ -927,6 +1105,12 @@ export function VerityWorkspace() {
               />
             </div>
           </div>
+          <StrDraftPanel
+            key={`${item.id}-str-draft`}
+            item={item}
+            investigation={live.investigation}
+            onCiteClick={(eventId) => setHighlightedEventId(eventId)}
+          />
           <footer className="py-5 text-center font-mono text-[9px] uppercase leading-relaxed text-muted-foreground">
             Verity prototype · synthetic exhibits are labeled · grounded reasoning engine
           </footer>

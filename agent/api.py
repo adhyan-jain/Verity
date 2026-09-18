@@ -64,6 +64,11 @@ app.add_middleware(
     allow_credentials=bool(_ALLOWED_ORIGINS),
     allow_methods=["*"],
     allow_headers=["*"],
+    # Content-Disposition isn't in the CORS response-header safelist by
+    # default; without this, cross-origin JS (the dashboard) can't read the
+    # filename the STR docx endpoint sets, and downloadStrDraftDocx() falls
+    # back to a generic name instead of the documented STR_<id>_<ts>.docx.
+    expose_headers=["Content-Disposition"],
 )
 
 # Active investigation sessions and real-time event streaming queues.

@@ -42,7 +42,7 @@ def main() -> int:
             print("[start] dashboard -> http://localhost:3000")
             dashboard_env = dict(os.environ)
             dashboard_proc = subprocess.Popen(
-                ["npm", "run", "dev"],
+                ["npm", "run", "dev", "--", "--port", "3000", "--strictPort"],
                 cwd=os.path.join(ROOT, "dashboard"),
                 env=dashboard_env,
                 shell=(os.name == "nt"),
