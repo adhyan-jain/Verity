@@ -64,24 +64,18 @@ def explain_transaction(
         features = {}
 
     if artifact is None:
-        if model is None or explainer is None:
-            artifact = load_fraud_artifact()
-            model = artifact["model"]
-            explainer = artifact["explainer"]
-            feature_names = artifact["feature_names"]
-            threshold = artifact.get("threshold", 0.5)
-            model_version = artifact.get("model_version", "v1.1-prod-calibrated")
-        else:
-            feature_names = [f"V{i}" for i in range(1, 29)]
-            feature_names = ["Time"] + feature_names + ["Amount"]
-            threshold = 0.5
-            model_version = "v1.0"
-    else:
+        artifact = load_fraud_artifact()
+
+    # Feature order/threshold/version always come from the trained artifact so a
+    # caller-supplied model/explainer can never be scored against a guessed
+    # feature order that silently mismatches how the model was trained.
+    feature_names = artifact["feature_names"]
+    threshold = artifact.get("threshold", 0.5)
+    model_version = artifact.get("model_version", "v1.1-prod-calibrated")
+    if model is None:
         model = artifact["model"]
+    if explainer is None:
         explainer = artifact["explainer"]
-        feature_names = artifact["feature_names"]
-        threshold = artifact.get("threshold", 0.5)
-        model_version = artifact.get("model_version", "v1.1-prod-calibrated")
 
     # Construct clean feature vector matching feature_names
     row_data = {feat: float(features.get(feat, 0.0)) for feat in feature_names}

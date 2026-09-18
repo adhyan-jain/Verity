@@ -1,16 +1,21 @@
 import json
+import os
 
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema import validate
 
-from engines.fraud.api import app
-from engines.fraud.explain import explain_transaction
+os.environ.setdefault("FRAUD_API_KEY", "test-key")
+
+from engines.fraud.api import app  # noqa: E402
+from engines.fraud.explain import explain_transaction  # noqa: E402
+
+API_KEY_HEADERS = {"X-API-Key": os.environ["FRAUD_API_KEY"]}
 
 
 @pytest.fixture(scope="session")
 def client():
-    return TestClient(app)
+    return TestClient(app, headers=API_KEY_HEADERS)
 
 
 @pytest.fixture(scope="session")
