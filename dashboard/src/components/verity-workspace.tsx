@@ -81,15 +81,16 @@ const CASES: [CaseFile, ...CaseFile[]] = [
     tierLabel: "Real card",
     status: "Open",
     title: "Off-hours card transaction",
-    summary: "A $4,850 authorization at 03:22 was flagged by amount and temporal signals.",
-    amount: "$4,850",
-    risk: 0.89,
+    summary:
+      "A $529 authorization at 00:08 was flagged mainly by anonymized behavioral signals, with a smaller amount contribution.",
+    amount: "$529",
+    risk: 0.93,
     opened: "09:15",
-    transactionId: "TX-CARD-9842",
+    transactionId: "TX-CARD-623",
     factors: [
-      { label: "Transaction amount", detail: "+0.42 model contribution", tone: "signal" },
-      { label: "Anonymized signal V14", detail: "+0.28 · meaning not inferred", tone: "amber" },
-      { label: "Off-hours timing", detail: "03:22 · +0.19 contribution", tone: "teal" },
+      { label: "Anonymized signal V4", detail: "+3.00 · meaning not inferred", tone: "signal" },
+      { label: "Anonymized signal V14", detail: "+2.33 · meaning not inferred", tone: "amber" },
+      { label: "Transaction amount", detail: "+0.45 model contribution ($529.00)", tone: "teal" },
     ],
     trace: [
       {
@@ -97,14 +98,14 @@ const CASES: [CaseFile, ...CaseFile[]] = [
         time: "09:15:00",
         tool: "get_transaction",
         sentence:
-          "Retrieved transaction TX-CARD-9842 for $4,850.00 processed at an anomalous off-hours timestamp (03:22 AM).",
+          "Retrieved transaction TX-CARD-623 for $529.00 processed at an anomalous off-hours timestamp (12:08 AM).",
       },
       {
         id: "EVT-102",
         time: "09:15:05",
         tool: "get_shap_explanation",
         sentence:
-          "SHAP feature attribution indicates elevated risk driven primarily by unusually high amount (+0.42 contribution) and temporal anomaly (+0.19 contribution).",
+          "SHAP feature attribution indicates elevated risk driven primarily by anonymized behavioral signals V4 (+3.00 contribution) and V14 (+2.33 contribution), with a smaller contribution from transaction amount (+0.45).",
       },
     ],
   },
@@ -154,7 +155,7 @@ const fallbackPreparedAnswers: Record<string, string> = {
   "CASE-SYNTH-003":
     "The closed loop remains the decisive signal. If the final transfer did not return to the origin, the round-tripping flag would be removed and the case would require a fresh engine score.",
   "CASE-CARD-001":
-    "Reducing the amount would lower its +0.42 contribution, but Verity re-runs the calibrated model before changing the verdict; the 03:22 timing signal remains.",
+    "Reducing the amount would only shave a small +0.45 contribution off the score; the dominant anonymized signals (V4, V14) are unaffected, so Verity's calibrated model would likely keep this case flagged.",
   "CASE-LEDGER-002":
     "A lower transfer amount alone may not clear the case because velocity exceeded the account baseline by more than 4× during the observed window.",
 };
@@ -475,8 +476,8 @@ function EvidenceTimeline({ item, timeline }: { item: CaseFile; timeline: Ledger
           tone: "teal" as const,
         },
         {
-          time: "03:22",
-          label: item.tier === "real_card" ? "$4,850 authorization" : "Velocity accelerates",
+          time: item.tier === "real_card" ? "00:08" : "03:22",
+          label: item.tier === "real_card" ? "$529 authorization" : "Velocity accelerates",
           tone: "amber" as const,
         },
         { time: "03:41", label: `${item.amount} primary event`, tone: "signal" as const },
