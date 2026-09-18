@@ -1,0 +1,194 @@
+{
+  "timestamp": "2026-09-18T18:28:23Z",
+  "description": "Standardized, leakage-safe evaluation across model families and dataset regimes.",
+  "results": [
+    {
+      "model_name": "LightGBM",
+      "dataset_id": "creditcard",
+      "split_strategy": "Chronological 80/20 strict temporal split (zero lookahead)",
+      "train_records": 40000,
+      "train_frauds": 104,
+      "test_records": 10000,
+      "test_frauds": 44,
+      "features_evaluated": [
+        "V1",
+        "V2",
+        "V3",
+        "V4",
+        "V5",
+        "V6",
+        "V7",
+        "V8",
+        "V9",
+        "V10",
+        "V11",
+        "V12",
+        "V13",
+        "V14",
+        "V15",
+        "V16",
+        "V17",
+        "V18",
+        "V19",
+        "V20",
+        "V21",
+        "V22",
+        "V23",
+        "V24",
+        "V25",
+        "V26",
+        "V27",
+        "V28",
+        "amount"
+      ],
+      "train_time_seconds": 2.415,
+      "pr_auc": 0.9697,
+      "roc_auc": 0.9998,
+      "calibrated_threshold": 0.195,
+      "precision": 0.9524,
+      "recall": 0.9091,
+      "f1": 0.9302,
+      "confusion_matrix": [
+        [
+          9954,
+          2
+        ],
+        [
+          4,
+          40
+        ]
+      ]
+    },
+    {
+      "model_name": "RandomForest",
+      "dataset_id": "creditcard",
+      "split_strategy": "Chronological 80/20 strict temporal split (zero lookahead)",
+      "train_records": 40000,
+      "train_frauds": 104,
+      "test_records": 10000,
+      "test_frauds": 44,
+      "features_evaluated": [
+        "V1",
+        "V2",
+        "V3",
+        "V4",
+        "V5",
+        "V6",
+        "V7",
+        "V8",
+        "V9",
+        "V10",
+        "V11",
+        "V12",
+        "V13",
+        "V14",
+        "V15",
+        "V16",
+        "V17",
+        "V18",
+        "V19",
+        "V20",
+        "V21",
+        "V22",
+        "V23",
+        "V24",
+        "V25",
+        "V26",
+        "V27",
+        "V28",
+        "amount"
+      ],
+      "train_time_seconds": 12.681,
+      "pr_auc": 0.979,
+      "roc_auc": 0.9999,
+      "calibrated_threshold": 0.2927,
+      "precision": 0.9167,
+      "recall": 1.0,
+      "f1": 0.9565,
+      "confusion_matrix": [
+        [
+          9952,
+          4
+        ],
+        [
+          0,
+          44
+        ]
+      ]
+    },
+    {
+      "model_name": "LightGBM",
+      "dataset_id": "kartik2112",
+      "split_strategy": "Chronological 80/20 strict temporal split (zero lookahead)",
+      "train_records": 40000,
+      "train_frauds": 239,
+      "test_records": 10000,
+      "test_frauds": 61,
+      "features_evaluated": [
+        "amount",
+        "haversine_distance",
+        "hour_of_day",
+        "is_night",
+        "age_at_transaction",
+        "velocity_1h",
+        "velocity_24h",
+        "amount_to_user_mean_ratio",
+        "city_pop"
+      ],
+      "train_time_seconds": 0.235,
+      "pr_auc": 0.9279,
+      "roc_auc": 0.9993,
+      "calibrated_threshold": 0.919,
+      "precision": 0.9259,
+      "recall": 0.8197,
+      "f1": 0.8696,
+      "confusion_matrix": [
+        [
+          9935,
+          4
+        ],
+        [
+          11,
+          50
+        ]
+      ]
+    },
+    {
+      "model_name": "RandomForest",
+      "dataset_id": "kartik2112",
+      "split_strategy": "Chronological 80/20 strict temporal split (zero lookahead)",
+      "train_records": 40000,
+      "train_frauds": 239,
+      "test_records": 10000,
+      "test_frauds": 61,
+      "features_evaluated": [
+        "amount",
+        "haversine_distance",
+        "hour_of_day",
+        "is_night",
+        "age_at_transaction",
+        "velocity_1h",
+        "velocity_24h",
+        "amount_to_user_mean_ratio",
+        "city_pop"
+      ],
+      "train_time_seconds": 0.772,
+      "pr_auc": 0.9257,
+      "roc_auc": 0.9902,
+      "calibrated_threshold": 0.6189,
+      "precision": 0.8548,
+      "recall": 0.8689,
+      "f1": 0.8618,
+      "confusion_matrix": [
+        [
+          9930,
+          9
+        ],
+        [
+          8,
+          53
+        ]
+      ]
+    }
+  ]
+}
