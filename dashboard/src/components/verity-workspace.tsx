@@ -196,8 +196,8 @@ function ActionButton({
       onClick={onClick}
       className={
         variant === "primary"
-          ? "control-button bg-signal text-signal-foreground"
-          : "control-button border border-ink/15 bg-panel text-ink"
+          ? "control-button bg-ink text-paper"
+          : "control-button border border-border bg-panel text-ink"
       }
     >
       {children}
@@ -240,7 +240,7 @@ function Masthead({ engines }: { engines: EngineStatus }) {
             title="Engines: Agent :8000 · Fraud :8001 · Ledger :8002 · Typology :8003"
           >
             <CircleDot
-              className={`size-3 ${onlineCount > 0 ? "text-teal animate-pulse" : "text-amber"}`}
+              className={`size-3 ${onlineCount > 0 ? "text-teal animate-pulse" : "text-muted-foreground"}`}
             />
             {onlineCount > 0 ? `Engines online (${onlineCount}/4)` : "Offline fixtures active"}
           </span>
@@ -252,7 +252,7 @@ function Masthead({ engines }: { engines: EngineStatus }) {
               Analyst · Tier 2
             </div>
           </div>
-          <div className="grid size-9 place-items-center rounded-full bg-amber/20 font-mono text-xs font-medium text-amber shadow-soft">
+          <div className="grid size-9 place-items-center rounded-full border border-border bg-panel-2 font-mono text-xs font-medium text-ink">
             CG
           </div>
         </div>
@@ -390,7 +390,7 @@ function RiskHeader({
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 md:gap-8">
         <div className="min-w-0">
           <div className="eyebrow flex items-center gap-2">
-            <span className="size-1.5 rounded-full bg-signal" /> Selected · {item.tierLabel}
+            <span className="size-1.5 rounded-full bg-ink" /> Selected · {item.tierLabel}
           </div>
           <h1 className="mt-3 max-w-3xl text-balance font-display text-3xl font-extrabold leading-[1.02] md:text-5xl">
             {item.title}
@@ -563,7 +563,7 @@ function EvidencePanel({
                 <Radio className="size-3 animate-pulse" /> Live Surface
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded bg-amber/15 px-2 py-0.5 font-mono text-[9px] font-semibold uppercase text-amber border border-amber/30">
+              <span className="inline-flex items-center gap-1 rounded border border-border bg-paper px-2 py-0.5 font-mono text-[9px] font-semibold uppercase text-muted-foreground">
                 <AlertTriangle className="size-3" /> Cached Exhibit
               </span>
             )}
@@ -619,7 +619,7 @@ function Factors({ item, liveFactors }: { item: CaseFile; liveFactors: FraudExpl
             <Radio className="size-3 animate-pulse" /> Live SHAP ({liveFactors.model_version})
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 rounded bg-amber/15 px-2 py-0.5 font-mono text-[9px] font-semibold uppercase text-amber border border-amber/30">
+          <span className="inline-flex items-center gap-1 rounded border border-border bg-paper px-2 py-0.5 font-mono text-[9px] font-semibold uppercase text-muted-foreground">
             <AlertTriangle className="size-3" /> Cached Exhibit
           </span>
         )}
@@ -682,7 +682,7 @@ function ReasoningTrace({
         </div>
         <span className="flex shrink-0 items-center gap-1.5 font-mono text-[9px] uppercase">
           {loading ? (
-            <span className="inline-flex items-center gap-1 rounded bg-signal/15 px-2 py-0.5 font-semibold text-signal border border-signal/30">
+            <span className="inline-flex items-center gap-1 rounded bg-amber/15 px-2 py-0.5 font-semibold text-amber border border-amber/30">
               <RefreshCw className="size-3 animate-spin" /> Investigating…
             </span>
           ) : investigation ? (
@@ -690,7 +690,7 @@ function ReasoningTrace({
               <Radio className="size-3 animate-pulse" /> Live Grounded Trace
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 rounded bg-amber/15 px-2 py-0.5 font-semibold text-amber border border-amber/30">
+            <span className="inline-flex items-center gap-1 rounded border border-border bg-paper px-2 py-0.5 font-semibold text-muted-foreground">
               <AlertTriangle className="size-3" /> Cached Demo Trace (Agent Offline)
             </span>
           )}
@@ -766,7 +766,7 @@ function QueryPanel({
           <div className="eyebrow text-paper/50">Counterfactual desk</div>
           <h2 className="mt-1 font-display text-xl font-bold">Interrogate the evidence</h2>
         </div>
-        <Sparkles className="size-4 text-amber" />
+        <Sparkles className={running ? "size-4 text-amber animate-pulse" : "size-4 text-muted-foreground"} />
       </div>
       {answer && (
         <div className="mt-4 border-l-2 border-teal bg-paper/5 px-4 py-3 text-sm leading-relaxed">
@@ -800,11 +800,13 @@ function QueryPanel({
         <button
           type="submit"
           disabled={running || !query.trim()}
-          className="control-button min-h-11 bg-signal text-signal-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          className={`control-button min-h-11 disabled:cursor-not-allowed disabled:opacity-50 ${
+            running ? "bg-amber text-amber-foreground" : "bg-paper text-ink"
+          }`}
         >
           {running ? (
             <>
-              <span className="size-2 animate-pulse rounded-full bg-signal-foreground" />{" "}
+              <span className="size-2 animate-pulse rounded-full bg-amber-foreground" />{" "}
               Investigating
             </>
           ) : (
@@ -904,6 +906,7 @@ export function VerityWorkspace() {
   return (
     <div className="min-h-screen bg-paper text-ink">
       <Masthead engines={engines} />
+<<<<<<< HEAD
 
       {/* Top Level Desk Switcher */}
       <div className="border-b border-ink/10 bg-panel/85 backdrop-blur px-4 sm:px-6 py-2.5 sticky top-0 z-30 shadow-xs">
@@ -962,12 +965,12 @@ export function VerityWorkspace() {
           />
           <main className="min-w-0 space-y-4">
             {!live.loading && !live.investigation && (
-              <div className="flex items-start gap-3 rounded-md border border-amber/40 bg-amber/10 p-4 text-xs text-amber font-mono shadow-sm">
-                <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber animate-pulse" />
+              <div className="flex items-start gap-3 rounded-md border border-border bg-panel p-4 text-xs text-muted-foreground font-mono">
+                <AlertTriangle className="size-4 shrink-0 mt-0.5" />
                 <div className="leading-relaxed">
-                  <span className="font-bold uppercase tracking-wider">Showing Cached Data — Live Service Unavailable:</span>{" "}
+                  <span className="font-bold uppercase tracking-wider text-ink">Showing Cached Data — Live Service Unavailable:</span>{" "}
                   The workspace is rendering pre-computed benchmark fixtures because backend microservices are offline. Run{" "}
-                  <code className="rounded bg-amber/20 px-1.5 py-0.5 font-bold text-amber">python scripts/dev_up.py</code> to connect live LightGBM/SHAP and FATF traversal engines (Ports 8000–8003).
+                  <code className="rounded bg-paper px-1.5 py-0.5 font-bold text-ink">python scripts/dev_up.py</code> to connect live LightGBM/SHAP and FATF traversal engines (Ports 8000–8003).
                 </div>
               </div>
             )}
@@ -988,8 +991,8 @@ export function VerityWorkspace() {
                 <section className="rounded-md bg-panel p-4 shadow-soft md:p-5">
                   <div className="eyebrow">Analyst disposition</div>
                   {decision ? (
-                    <div className="mt-4 flex items-center gap-3 rounded-md bg-teal/10 p-3 text-sm text-teal">
-                      <Check className="size-4 shrink-0" /> Marked “{decision}” in this session
+                    <div className="mt-4 flex items-center gap-3 rounded-md bg-cleared/10 p-3 text-sm text-cleared">
+                      <Check className="size-4 shrink-0" /> Marked "{decision}" in this session
                     </div>
                   ) : (
                     <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
