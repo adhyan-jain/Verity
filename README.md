@@ -21,7 +21,7 @@ Verity/
     raw/                       # Raw datasets (creditcard.csv, bank.xlsx) — Git LFS
     synthetic/                 # FATF typology network generator + generated network/adversarial set
   engines/
-    fraud/                     # Imbalance benchmarking, training, SHAP explainability, FastAPI :8001
+    fraud/                     # Imbalance benchmarking, training, SHAP explainability, split-conformal risk interval, FastAPI :8001
     ledger/                    # bank.xlsx parsing, baselines, anomaly detection, timelines, FastAPI :8002
     typology/                  # FATF rules (structuring, round-tripping, rapid-layering), FastAPI :8003
   agent/                       # Hand-rolled tool-calling loop, grounding filter, fallback Q&A, FastAPI :8000
@@ -33,7 +33,7 @@ Verity/
     dev_up.py                  # One-command bring-up for all 4 services (+ dashboard)
     smoke_test.py               # End-to-end check against real data, no mocks
   docs/                        # Architecture, PRD, API spec, pitch, demo script
-  tests/                       # pytest suite for engines + agent (56 tests)
+  tests/                       # pytest suite for engines + agent (80 tests)
   ARCHITECTURE.md              # Integration survey: components, gaps, decisions, remaining work
   .env.example                 # All environment variables in one place
 ```
@@ -74,7 +74,8 @@ cp .env.example .env              # edit FRAUD_API_KEY / VITE_FRAUD_API_KEY if y
 ## ▶️ Run
 
 One command starts all four backend services (agent :8000, fraud :8001, ledger :8002, typology
-:8003) — training the fraud model first if `engines/fraud/model.pkl` doesn't exist yet (~90s,
+:8003) — training the fraud model and calibrating its split-conformal risk interval first if
+`engines/fraud/model.pkl` / `engines/fraud/conformal.pkl` don't exist yet (~90s + ~10s,
 one-time) — then the dashboard dev server on :3000:
 
 ```sh
@@ -105,7 +106,7 @@ npm --prefix dashboard run dev
 
 ## ✅ Test & Rigor Evaluation
 
-**Unit/integration test suite** (70 tests, mocked/in-process — no services need to be running):
+**Unit/integration test suite** (80 tests, mocked/in-process — no services need to be running):
 ```sh
 python -m pytest -v
 ```
@@ -121,6 +122,30 @@ python scripts/smoke_test.py
 **Unified Agent Rigor Evaluation Harness (Grounding + Narrative-Model Consistency):**
 ```sh
 python scripts/evaluate_agent.py
+```
+
+## 📏 Fraud Score Uncertainty Quantification
+
+The fraud engine's LightGBM risk score is wrapped in a split-conformal prediction interval
+(`engines/fraud/conformal.py`, built with [`mapie`](https://mapie.readthedocs.io)), additive to
+the existing SHAP factors panel. For a flagged transaction the dashboard shows, e.g.:
+
+> Risk score **1.00**, with a **90%** confidence interval of **[0.94, 1.00]** (split-conformal,
+> validated at **90.3%** empirical coverage)
+
+**Measured empirical coverage** (does the true label fall inside the interval ~90% of the time,
+on a held-out evaluation set disjoint from calibration): **90.28%** overall, against a 90%
+target, on 28,481 evaluation rows from `data/raw/creditcard.csv`. Calibration partitions by the
+model's own predicted verdict (Mondrian conformal) rather than a single pooled quantile — a
+pooled quantile on this ~99.83%-legitimate dataset gave a technically-valid ~90% marginal
+coverage number from an interval so narrow it achieved 0% coverage specifically on fraud rows;
+partitioning fixed that (fraud-class coverage 0% → 72.7%). Full derivation, the failure mode
+found, and per-partition numbers: [`ARCHITECTURE.md` §6](ARCHITECTURE.md).
+
+Runs automatically on first bring-up (`scripts/dev_up.py`); re-run manually after retraining
+the model:
+```sh
+python -m engines.fraud.conformal
 ```
 
 ---

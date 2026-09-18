@@ -285,3 +285,83 @@ match the implementation, verified against `scripts/smoke_test.py`'s real calls.
   `/api/v1/agent/counterfactual` (which goes through `agent/tools.py`) is what's actually used
   end-to-end. Flagging rather than deleting, since it's Person A's code and not blocking
   anything — a call to remove it belongs to a future cleanup pass with their sign-off.
+
+## 6. Fraud engine: split-conformal risk interval (`feature/fraud-conformal` branch)
+
+Adds a distribution-free prediction interval around the fraud engine's LightGBM risk score,
+additive to the existing SHAP `top_factors` panel — `risk_score`/`verdict`/`top_factors` are
+unchanged; only a new, optional `risk_interval` field is attached.
+
+### 6.1 Why a regression conformalizer wraps a classifier
+Built with `mapie` (`SplitConformalRegressor`), not a hand-rolled implementation. MAPIE's
+classification API produces prediction *sets* of candidate labels, not an interval around a
+continuous score — not what a "0.93, 90% CI [0.88, 0.97]" display needs. Standard technique
+instead: treat `predict_proba(...)[:, 1]` as a continuous point estimate (via a thin
+`ProbaAsRegressor` sklearn-interface adapter, `engines/fraud/conformal.py`) and conformalize
+that with absolute-residual nonconformity, MAPIE's regression default.
+
+### 6.2 Mondrian partitioning — a real problem found and fixed mid-build
+`creditcard.csv` is ~99.83% legitimate. A single pooled conformalizer's residual quantile is
+set almost entirely by the trivially easy majority class: measured empirically, a pooled
+calibration produced a technically-correct "~90% marginal coverage" interval so narrow
+(mean width ±0.0007) that it achieved **0% coverage on fraud rows specifically** — correct on
+average, silently useless on exactly the population a fraud analyst cares about. Fixed by
+calibrating **two** `SplitConformalRegressor`s — one per side of the model's own decision
+threshold (predicted-flagged vs. predicted-clear) — and routing each new transaction to the
+matching one at inference time. Still built entirely with `mapie`; only which calibration rows
+feed which conformalizer changed. Result: fraud-class coverage 0% → 72.7%, while the pooled
+headline number stays close to target.
+
+### 6.3 Calibration protocol
+The model's own held-out chronological test region (`engines/fraud/train.py::chronological_split`,
+shared by both modules so they always agree on which rows the production model never trained
+on) is itself split in half by time:
+- first half → conformal calibration set (fits the two partitions' residual quantiles)
+- second half → coverage evaluation set (never touched by calibration; the only data the
+  reported empirical coverage is measured against)
+
+Keeping these disjoint avoids the classic mistake of reporting coverage on the same data the
+interval was fit to, which trivially inflates the number.
+
+### 6.4 Real calibration result (`data/raw/creditcard.csv`, 90% target)
+```
+pooled empirical coverage = 0.9028  on 28,481 held-out evaluation rows
+  flagged partition: n_calib=43,    coverage=0.80, width=0.076  (small-sample; n_eval=20)
+  clear partition:   n_calib=28438, coverage=0.90, width=0.0007
+by true class:        fraud=0.727, legitimate=0.903
+```
+A real flagged transaction (`TX-CARD-541`, risk_score 0.9979) returns interval `[0.9351, 1.0]`
+from the live engine — this is the number the UI actually renders, not a synthetic example.
+
+Honest caveat, stated here rather than only in code comments: fraud-class coverage (72.7%) is
+still below the 90% target. This is expected and inherent to partitioning by the model's own
+*predicted* verdict rather than the true label (which conformal prediction cannot use without
+leaking the answer) — a false-negative fraud row lands in the tight "clear" partition, which
+cannot bracket label 1 with its ~0.0007-wide interval. The Mondrian partition is a large,
+measured improvement over the pooled baseline (0% → 72.7%), not a claim of solving class
+imbalance outright.
+
+### 6.5 Wiring — additive, not required
+- `engines/fraud/explain.py`: `explain_transaction()` attaches `risk_interval` when
+  `engines/fraud/conformal.pkl` exists; omits it (never raises) otherwise, so the SHAP panel
+  works exactly as before calibration is run. Same checksum-verified-artifact contract as
+  `model.pkl`, just non-fatal on absence.
+- `engines/fraud/api.py`: `FraudExplanationResponse.risk_interval` (optional); `/health` also
+  reports calibration metadata (coverage, width, coverage-by-class) when available.
+- `contracts/schemas.json`: `FraudExplanation.risk_interval`, optional, single source of truth.
+- `scripts/_services.py`: `ensure_fraud_conformal_calibrated()` auto-bootstraps calibration on
+  a fresh checkout (same pattern as model training) — on by default, never a hard requirement
+  anywhere it's consumed.
+- `dashboard`: `Factors` panel renders "Risk score _, with a 90% confidence interval of [_, _]
+  (split-conformal, validated at _% empirical coverage)" above the unchanged SHAP factor list
+  when `risk_interval` is present; renders nothing otherwise.
+
+### 6.6 Files
+- `engines/fraud/conformal.py` (new) — `ProbaAsRegressor`, Mondrian calibration, artifact
+  load/cache (path-keyed, unlike the single-artifact `model.pkl` cache — needed since tests
+  exercise multiple calibration paths in one process), `predict_risk_interval`.
+- `engines/fraud/train.py` — extracted `chronological_split()` (no behavior change to training).
+- `tests/test_fraud_conformal.py` (new, 10 tests) — wrapper parity, bounded/disjoint
+  calibration, pooled coverage within tolerance of target, the flagged-wider-than-clear
+  property, score-based partition routing, missing/tampered-artifact handling, full
+  `explain_transaction()` integration with and without calibration.
