@@ -201,13 +201,15 @@ def detect_rapid_layering(
     min_hops: int = 3,
     max_hop_hours: float = 3.0,
     min_pass_through_ratio: float = 0.85,
+    min_transfer_amount: float = 1000.0,
 ) -> list[dict[str, Any]]:
     """
     FATF Typology: Rapid Layering.
-    Detects high-velocity pass-through transit chains (>= 3 hops, inter-hop latency < 3h).
+    Detects high-velocity pass-through transit chains (>= 3 hops, inter-hop latency < 3h, amount >= $1,000).
     Uses time-constrained DFS for high-performance execution.
     """
     flags: list[dict[str, Any]] = []
+
 
     def dfs_layer(
         curr_node: str,
@@ -266,12 +268,14 @@ def detect_rapid_layering(
         for _, first_dst, k, first_edge in G.out_edges(
             start_node, keys=True, data=True
         ):
-            dfs_layer(
-                first_dst,
-                [start_node, first_dst],
-                [first_edge["id"]],
-                first_edge["datetime"],
-                first_edge["amount"],
-            )
+            if first_edge["amount"] >= min_transfer_amount:
+                dfs_layer(
+                    first_dst,
+                    [start_node, first_dst],
+                    [first_edge["id"]],
+                    first_edge["datetime"],
+                    first_edge["amount"],
+                )
+
 
     return flags

@@ -1,71 +1,2511 @@
 [
   {
-    "test_id": "ADV-001",
-    "description": "Benign corporate payroll burst - 1 to N high-velocity disbursement",
-    "expected_verdict": "benign",
-    "nodes": [
-      {"id": "CORP-PAYROLL-01", "name": "Global Tech Corp", "risk_rating": "low"},
-      {"id": "EMP-01", "name": "Alice Employee", "risk_rating": "low"},
-      {"id": "EMP-02", "name": "Bob Employee", "risk_rating": "low"},
-      {"id": "EMP-03", "name": "Charlie Employee", "risk_rating": "low"}
-    ],
-    "edges": [
-      {"id": "TX-ADV-01", "from_account": "CORP-PAYROLL-01", "to_account": "EMP-01", "amount": 4500.0, "timestamp": "2026-09-18T09:00:00Z"},
-      {"id": "TX-ADV-02", "from_account": "CORP-PAYROLL-01", "to_account": "EMP-02", "amount": 4800.0, "timestamp": "2026-09-18T09:01:00Z"},
-      {"id": "TX-ADV-03", "from_account": "CORP-PAYROLL-01", "to_account": "EMP-03", "amount": 4200.0, "timestamp": "2026-09-18T09:02:00Z"}
-    ],
-    "test_rationale": "Fan-out pattern from corporate payroll should not trigger smurfing/structuring (which requires fan-in below threshold)."
-  },
-  {
-    "test_id": "ADV-002",
-    "description": "True FATF Structuring - 4 fan-in smurf accounts sending $9,700 to single collector",
+    "test_id": "ADV-STR-TP-01",
+    "description": "True FATF Structuring: 4 fan-in deposits under 10k within 24h into COLL-TP-01",
     "expected_verdict": "flagged",
     "expected_typology": "structuring",
     "nodes": [
-      {"id": "SMURF-A", "name": "Smurf Account Alpha", "risk_rating": "high"},
-      {"id": "SMURF-B", "name": "Smurf Account Beta", "risk_rating": "high"},
-      {"id": "SMURF-C", "name": "Smurf Account Gamma", "risk_rating": "high"},
-      {"id": "SMURF-D", "name": "Smurf Account Delta", "risk_rating": "high"},
-      {"id": "COLLECTOR-X", "name": "Shell Entity Collector", "risk_rating": "critical"}
+      {
+        "id": "COLL-TP-01",
+        "name": "Collector Entity 1",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SMURF-01-1",
+        "name": "Smurf Account 1",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-01-2",
+        "name": "Smurf Account 2",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-01-3",
+        "name": "Smurf Account 3",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-01-4",
+        "name": "Smurf Account 4",
+        "risk_rating": "high"
+      }
     ],
     "edges": [
-      {"id": "TX-ADV-11", "from_account": "SMURF-A", "to_account": "COLLECTOR-X", "amount": 9750.0, "timestamp": "2026-09-18T10:00:00Z"},
-      {"id": "TX-ADV-12", "from_account": "SMURF-B", "to_account": "COLLECTOR-X", "amount": 9800.0, "timestamp": "2026-09-18T11:15:00Z"},
-      {"id": "TX-ADV-13", "from_account": "SMURF-C", "to_account": "COLLECTOR-X", "amount": 9650.0, "timestamp": "2026-09-18T12:30:00Z"},
-      {"id": "TX-ADV-14", "from_account": "SMURF-D", "to_account": "COLLECTOR-X", "amount": 9900.0, "timestamp": "2026-09-18T14:00:00Z"}
+      {
+        "id": "TX-STR-TP-01-1",
+        "from_account": "SMURF-01-1",
+        "to_account": "COLL-TP-01",
+        "amount": 8500.0,
+        "timestamp": "2026-09-18T08:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-01-2",
+        "from_account": "SMURF-01-2",
+        "to_account": "COLL-TP-01",
+        "amount": 8800.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-01-3",
+        "from_account": "SMURF-01-3",
+        "to_account": "COLL-TP-01",
+        "amount": 9100.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-01-4",
+        "from_account": "SMURF-01-4",
+        "to_account": "COLL-TP-01",
+        "amount": 9400.0,
+        "timestamp": "2026-09-18T14:00:00Z"
+      }
     ],
-    "test_rationale": "Direct violation of FATF Rec. 10: 4 sub-$10k deposits within 4 hours totalling $39,100."
+    "test_rationale": "Matches FATF Rec. 10 smurfing criteria: >=3 distinct senders, 7.5k-10k, <24h."
   },
   {
-    "test_id": "ADV-003",
-    "description": "True FATF Round-Tripping - 3-hop closed loop retaining 94% capital in 30 hours",
+    "test_id": "ADV-STR-TP-02",
+    "description": "True FATF Structuring: 5 fan-in deposits under 10k within 24h into COLL-TP-02",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      {
+        "id": "COLL-TP-02",
+        "name": "Collector Entity 2",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SMURF-02-1",
+        "name": "Smurf Account 1",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-02-2",
+        "name": "Smurf Account 2",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-02-3",
+        "name": "Smurf Account 3",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-02-4",
+        "name": "Smurf Account 4",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-02-5",
+        "name": "Smurf Account 5",
+        "risk_rating": "high"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-STR-TP-02-1",
+        "from_account": "SMURF-02-1",
+        "to_account": "COLL-TP-02",
+        "amount": 8500.0,
+        "timestamp": "2026-09-18T08:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-02-2",
+        "from_account": "SMURF-02-2",
+        "to_account": "COLL-TP-02",
+        "amount": 8800.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-02-3",
+        "from_account": "SMURF-02-3",
+        "to_account": "COLL-TP-02",
+        "amount": 9100.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-02-4",
+        "from_account": "SMURF-02-4",
+        "to_account": "COLL-TP-02",
+        "amount": 9400.0,
+        "timestamp": "2026-09-18T14:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-02-5",
+        "from_account": "SMURF-02-5",
+        "to_account": "COLL-TP-02",
+        "amount": 9700.0,
+        "timestamp": "2026-09-18T16:00:00Z"
+      }
+    ],
+    "test_rationale": "Matches FATF Rec. 10 smurfing criteria: >=3 distinct senders, 7.5k-10k, <24h."
+  },
+  {
+    "test_id": "ADV-STR-TP-03",
+    "description": "True FATF Structuring: 3 fan-in deposits under 10k within 24h into COLL-TP-03",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      {
+        "id": "COLL-TP-03",
+        "name": "Collector Entity 3",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SMURF-03-1",
+        "name": "Smurf Account 1",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-03-2",
+        "name": "Smurf Account 2",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-03-3",
+        "name": "Smurf Account 3",
+        "risk_rating": "high"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-STR-TP-03-1",
+        "from_account": "SMURF-03-1",
+        "to_account": "COLL-TP-03",
+        "amount": 8500.0,
+        "timestamp": "2026-09-18T08:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-03-2",
+        "from_account": "SMURF-03-2",
+        "to_account": "COLL-TP-03",
+        "amount": 8800.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-03-3",
+        "from_account": "SMURF-03-3",
+        "to_account": "COLL-TP-03",
+        "amount": 9100.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      }
+    ],
+    "test_rationale": "Matches FATF Rec. 10 smurfing criteria: >=3 distinct senders, 7.5k-10k, <24h."
+  },
+  {
+    "test_id": "ADV-STR-TP-04",
+    "description": "True FATF Structuring: 4 fan-in deposits under 10k within 24h into COLL-TP-04",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      {
+        "id": "COLL-TP-04",
+        "name": "Collector Entity 4",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SMURF-04-1",
+        "name": "Smurf Account 1",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-04-2",
+        "name": "Smurf Account 2",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-04-3",
+        "name": "Smurf Account 3",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-04-4",
+        "name": "Smurf Account 4",
+        "risk_rating": "high"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-STR-TP-04-1",
+        "from_account": "SMURF-04-1",
+        "to_account": "COLL-TP-04",
+        "amount": 8500.0,
+        "timestamp": "2026-09-18T08:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-04-2",
+        "from_account": "SMURF-04-2",
+        "to_account": "COLL-TP-04",
+        "amount": 8800.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-04-3",
+        "from_account": "SMURF-04-3",
+        "to_account": "COLL-TP-04",
+        "amount": 9100.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-04-4",
+        "from_account": "SMURF-04-4",
+        "to_account": "COLL-TP-04",
+        "amount": 9400.0,
+        "timestamp": "2026-09-18T14:00:00Z"
+      }
+    ],
+    "test_rationale": "Matches FATF Rec. 10 smurfing criteria: >=3 distinct senders, 7.5k-10k, <24h."
+  },
+  {
+    "test_id": "ADV-STR-TP-05",
+    "description": "True FATF Structuring: 5 fan-in deposits under 10k within 24h into COLL-TP-05",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      {
+        "id": "COLL-TP-05",
+        "name": "Collector Entity 5",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SMURF-05-1",
+        "name": "Smurf Account 1",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-05-2",
+        "name": "Smurf Account 2",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-05-3",
+        "name": "Smurf Account 3",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-05-4",
+        "name": "Smurf Account 4",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-05-5",
+        "name": "Smurf Account 5",
+        "risk_rating": "high"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-STR-TP-05-1",
+        "from_account": "SMURF-05-1",
+        "to_account": "COLL-TP-05",
+        "amount": 8500.0,
+        "timestamp": "2026-09-18T08:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-05-2",
+        "from_account": "SMURF-05-2",
+        "to_account": "COLL-TP-05",
+        "amount": 8800.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-05-3",
+        "from_account": "SMURF-05-3",
+        "to_account": "COLL-TP-05",
+        "amount": 9100.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-05-4",
+        "from_account": "SMURF-05-4",
+        "to_account": "COLL-TP-05",
+        "amount": 9400.0,
+        "timestamp": "2026-09-18T14:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-05-5",
+        "from_account": "SMURF-05-5",
+        "to_account": "COLL-TP-05",
+        "amount": 9700.0,
+        "timestamp": "2026-09-18T16:00:00Z"
+      }
+    ],
+    "test_rationale": "Matches FATF Rec. 10 smurfing criteria: >=3 distinct senders, 7.5k-10k, <24h."
+  },
+  {
+    "test_id": "ADV-STR-TP-06",
+    "description": "True FATF Structuring: 3 fan-in deposits under 10k within 24h into COLL-TP-06",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      {
+        "id": "COLL-TP-06",
+        "name": "Collector Entity 6",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SMURF-06-1",
+        "name": "Smurf Account 1",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-06-2",
+        "name": "Smurf Account 2",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-06-3",
+        "name": "Smurf Account 3",
+        "risk_rating": "high"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-STR-TP-06-1",
+        "from_account": "SMURF-06-1",
+        "to_account": "COLL-TP-06",
+        "amount": 8500.0,
+        "timestamp": "2026-09-18T08:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-06-2",
+        "from_account": "SMURF-06-2",
+        "to_account": "COLL-TP-06",
+        "amount": 8800.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-06-3",
+        "from_account": "SMURF-06-3",
+        "to_account": "COLL-TP-06",
+        "amount": 9100.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      }
+    ],
+    "test_rationale": "Matches FATF Rec. 10 smurfing criteria: >=3 distinct senders, 7.5k-10k, <24h."
+  },
+  {
+    "test_id": "ADV-STR-TP-07",
+    "description": "True FATF Structuring: 4 fan-in deposits under 10k within 24h into COLL-TP-07",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      {
+        "id": "COLL-TP-07",
+        "name": "Collector Entity 7",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SMURF-07-1",
+        "name": "Smurf Account 1",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-07-2",
+        "name": "Smurf Account 2",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-07-3",
+        "name": "Smurf Account 3",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-07-4",
+        "name": "Smurf Account 4",
+        "risk_rating": "high"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-STR-TP-07-1",
+        "from_account": "SMURF-07-1",
+        "to_account": "COLL-TP-07",
+        "amount": 8500.0,
+        "timestamp": "2026-09-18T08:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-07-2",
+        "from_account": "SMURF-07-2",
+        "to_account": "COLL-TP-07",
+        "amount": 8800.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-07-3",
+        "from_account": "SMURF-07-3",
+        "to_account": "COLL-TP-07",
+        "amount": 9100.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-07-4",
+        "from_account": "SMURF-07-4",
+        "to_account": "COLL-TP-07",
+        "amount": 9400.0,
+        "timestamp": "2026-09-18T14:00:00Z"
+      }
+    ],
+    "test_rationale": "Matches FATF Rec. 10 smurfing criteria: >=3 distinct senders, 7.5k-10k, <24h."
+  },
+  {
+    "test_id": "ADV-STR-TP-08",
+    "description": "True FATF Structuring: 5 fan-in deposits under 10k within 24h into COLL-TP-08",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      {
+        "id": "COLL-TP-08",
+        "name": "Collector Entity 8",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SMURF-08-1",
+        "name": "Smurf Account 1",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-08-2",
+        "name": "Smurf Account 2",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-08-3",
+        "name": "Smurf Account 3",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-08-4",
+        "name": "Smurf Account 4",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SMURF-08-5",
+        "name": "Smurf Account 5",
+        "risk_rating": "high"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-STR-TP-08-1",
+        "from_account": "SMURF-08-1",
+        "to_account": "COLL-TP-08",
+        "amount": 8500.0,
+        "timestamp": "2026-09-18T08:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-08-2",
+        "from_account": "SMURF-08-2",
+        "to_account": "COLL-TP-08",
+        "amount": 8800.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-08-3",
+        "from_account": "SMURF-08-3",
+        "to_account": "COLL-TP-08",
+        "amount": 9100.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-08-4",
+        "from_account": "SMURF-08-4",
+        "to_account": "COLL-TP-08",
+        "amount": 9400.0,
+        "timestamp": "2026-09-18T14:00:00Z"
+      },
+      {
+        "id": "TX-STR-TP-08-5",
+        "from_account": "SMURF-08-5",
+        "to_account": "COLL-TP-08",
+        "amount": 9700.0,
+        "timestamp": "2026-09-18T16:00:00Z"
+      }
+    ],
+    "test_rationale": "Matches FATF Rec. 10 smurfing criteria: >=3 distinct senders, 7.5k-10k, <24h."
+  },
+  {
+    "test_id": "ADV-STR-FP-01",
+    "description": "Benign corporate payroll fan-out (1 to 4 employees)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "CORP-01",
+        "name": "Acme Corp",
+        "risk_rating": "low"
+      },
+      {
+        "id": "E1",
+        "name": "E1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "E2",
+        "name": "E2",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-FP1-1",
+        "from_account": "CORP-01",
+        "to_account": "E1",
+        "amount": 8500.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-FP1-2",
+        "from_account": "CORP-01",
+        "to_account": "E2",
+        "amount": 8500.0,
+        "timestamp": "2026-09-18T09:05:00Z"
+      }
+    ],
+    "test_rationale": "Fan-out disbursement, not fan-in collection."
+  },
+  {
+    "test_id": "ADV-STR-FP-02",
+    "description": "Benign fan-in but only 2 senders (below 3 sender threshold)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "REC-01",
+        "name": "Receiver",
+        "risk_rating": "low"
+      },
+      {
+        "id": "S1",
+        "name": "S1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "S2",
+        "name": "S2",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-FP2-1",
+        "from_account": "S1",
+        "to_account": "REC-01",
+        "amount": 9500.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-FP2-2",
+        "from_account": "S2",
+        "to_account": "REC-01",
+        "amount": 9500.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      }
+    ],
+    "test_rationale": "Only 2 deposits; standard retail counterparties."
+  },
+  {
+    "test_id": "ADV-STR-FP-03",
+    "description": "Benign micro-donations fan-in (amounts 50 each, below 7,500 threshold)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "CHARITY-01",
+        "name": "Charity Org",
+        "risk_rating": "low"
+      },
+      {
+        "id": "D1",
+        "name": "D1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "D2",
+        "name": "D2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "D3",
+        "name": "D3",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-FP3-1",
+        "from_account": "D1",
+        "to_account": "CHARITY-01",
+        "amount": 50.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-FP3-2",
+        "from_account": "D2",
+        "to_account": "CHARITY-01",
+        "amount": 75.0,
+        "timestamp": "2026-09-18T09:10:00Z"
+      },
+      {
+        "id": "TX-FP3-3",
+        "from_account": "D3",
+        "to_account": "CHARITY-01",
+        "amount": 100.0,
+        "timestamp": "2026-09-18T09:20:00Z"
+      }
+    ],
+    "test_rationale": "Amounts far below smurfing bounds."
+  },
+  {
+    "test_id": "ADV-STR-FP-04",
+    "description": "Benign weekly supplier invoices (spread over 3 weeks, not 24h window)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "STORE-01",
+        "name": "Retail Store",
+        "risk_rating": "low"
+      },
+      {
+        "id": "SP1",
+        "name": "SP1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "SP2",
+        "name": "SP2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "SP3",
+        "name": "SP3",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-FP4-1",
+        "from_account": "SP1",
+        "to_account": "STORE-01",
+        "amount": 8500.0,
+        "timestamp": "2026-09-01T09:00:00Z"
+      },
+      {
+        "id": "TX-FP4-2",
+        "from_account": "SP2",
+        "to_account": "STORE-01",
+        "amount": 8800.0,
+        "timestamp": "2026-09-08T09:00:00Z"
+      },
+      {
+        "id": "TX-FP4-3",
+        "from_account": "SP3",
+        "to_account": "STORE-01",
+        "amount": 9200.0,
+        "timestamp": "2026-09-15T09:00:00Z"
+      }
+    ],
+    "test_rationale": "Time gap between transactions is 7 days."
+  },
+  {
+    "test_id": "ADV-STR-FP-05",
+    "description": "Large single wire transfers (50,000 each, above 10,000 CTR threshold)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "CORP-02",
+        "name": "Treasury",
+        "risk_rating": "low"
+      },
+      {
+        "id": "B1",
+        "name": "B1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "B2",
+        "name": "B2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "B3",
+        "name": "B3",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-FP5-1",
+        "from_account": "B1",
+        "to_account": "CORP-02",
+        "amount": 50000.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-FP5-2",
+        "from_account": "B2",
+        "to_account": "CORP-02",
+        "amount": 60000.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      },
+      {
+        "id": "TX-FP5-3",
+        "from_account": "B3",
+        "to_account": "CORP-02",
+        "amount": 75000.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      }
+    ],
+    "test_rationale": "Fully declared high-value wires above CTR threshold."
+  },
+  {
+    "test_id": "ADV-STR-FP-06",
+    "description": "Low cumulative fan-in total (7,600 + 7,600 = 15,200, below 18,000 hurdle)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "REC-02",
+        "name": "REC-02",
+        "risk_rating": "low"
+      },
+      {
+        "id": "A1",
+        "name": "A1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "A2",
+        "name": "A2",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-FP6-1",
+        "from_account": "A1",
+        "to_account": "REC-02",
+        "amount": 7600.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-FP6-2",
+        "from_account": "A2",
+        "to_account": "REC-02",
+        "amount": 7600.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Total volume does not breach multi-smurf materiality criteria."
+  },
+  {
+    "test_id": "ADV-STR-FP-07",
+    "description": "Single sender depositing 3 times into own savings account",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "USER-CHECKING",
+        "name": "User Checking",
+        "risk_rating": "low"
+      },
+      {
+        "id": "USER-SAVINGS",
+        "name": "User Savings",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-FP7-1",
+        "from_account": "USER-CHECKING",
+        "to_account": "USER-SAVINGS",
+        "amount": 8000.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-FP7-2",
+        "from_account": "USER-CHECKING",
+        "to_account": "USER-SAVINGS",
+        "amount": 8000.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      },
+      {
+        "id": "TX-FP7-3",
+        "from_account": "USER-CHECKING",
+        "to_account": "USER-SAVINGS",
+        "amount": 8000.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      }
+    ],
+    "test_rationale": "1 unique sender, not multi-party smurfing."
+  },
+  {
+    "test_id": "ADV-STR-FP-08",
+    "description": "Benign retail refund processing from 3 merchants (40 each)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "CUSTOMER-01",
+        "name": "Customer",
+        "risk_rating": "low"
+      },
+      {
+        "id": "M1",
+        "name": "M1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "M2",
+        "name": "M2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "M3",
+        "name": "M3",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-FP8-1",
+        "from_account": "M1",
+        "to_account": "CUSTOMER-01",
+        "amount": 40.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-FP8-2",
+        "from_account": "M2",
+        "to_account": "CUSTOMER-01",
+        "amount": 45.0,
+        "timestamp": "2026-09-18T10:30:00Z"
+      },
+      {
+        "id": "TX-FP8-3",
+        "from_account": "M3",
+        "to_account": "CUSTOMER-01",
+        "amount": 35.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Legitimate consumer refunds."
+  },
+  {
+    "test_id": "ADV-RT-TP-01",
+    "description": "True FATF Round-Tripping: 3-hop circular flow returning 92.5% volume in 20h",
     "expected_verdict": "flagged",
     "expected_typology": "round_tripping",
     "nodes": [
-      {"id": "NODE-RT-1", "name": "Domestic Originator Inc", "risk_rating": "high"},
-      {"id": "NODE-RT-2", "name": "BVI Holding Ltd", "risk_rating": "critical"},
-      {"id": "NODE-RT-3", "name": "Cayman Trading Corp", "risk_rating": "critical"}
+      {
+        "id": "ORIGIN-RT-01",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SHELL-A-01",
+        "name": "Hop A",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SHELL-B-01",
+        "name": "Hop B",
+        "risk_rating": "critical"
+      }
     ],
     "edges": [
-      {"id": "TX-ADV-21", "from_account": "NODE-RT-1", "to_account": "NODE-RT-2", "amount": 100000.0, "timestamp": "2026-09-18T08:00:00Z"},
-      {"id": "TX-ADV-22", "from_account": "NODE-RT-2", "to_account": "NODE-RT-3", "amount": 97000.0, "timestamp": "2026-09-18T18:00:00Z"},
-      {"id": "TX-ADV-23", "from_account": "NODE-RT-3", "to_account": "NODE-RT-1", "amount": 94000.0, "timestamp": "2026-09-19T14:00:00Z"}
+      {
+        "id": "TX-RT-TP-01-1",
+        "from_account": "ORIGIN-RT-01",
+        "to_account": "SHELL-A-01",
+        "amount": 60000.0,
+        "timestamp": "2026-09-18T06:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-01-2",
+        "from_account": "SHELL-A-01",
+        "to_account": "SHELL-B-01",
+        "amount": 57600.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-01-3",
+        "from_account": "SHELL-B-01",
+        "to_account": "ORIGIN-RT-01",
+        "amount": 55500.0,
+        "timestamp": "2026-09-19T02:00:00Z"
+      }
     ],
-    "test_rationale": "Directed cycle matching circular laundering with 94% volume conservation within 30 hours."
+    "test_rationale": "Closed directed cycle retaining >=85% capital within 72h."
   },
   {
-    "test_id": "ADV-004",
-    "description": "Benign staged escrow with long dwell times (>7 days)",
-    "expected_verdict": "benign",
+    "test_id": "ADV-RT-TP-02",
+    "description": "True FATF Round-Tripping: 3-hop circular flow returning 94.0% volume in 20h",
+    "expected_verdict": "flagged",
+    "expected_typology": "round_tripping",
     "nodes": [
-      {"id": "ESCROW-01", "name": "Real Estate Escrow", "risk_rating": "low"},
-      {"id": "BUILDER-01", "name": "Prime Constructions", "risk_rating": "low"},
-      {"id": "SUPPLIER-01", "name": "Steel Suppliers Ltd", "risk_rating": "low"}
+      {
+        "id": "ORIGIN-RT-02",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SHELL-A-02",
+        "name": "Hop A",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SHELL-B-02",
+        "name": "Hop B",
+        "risk_rating": "critical"
+      }
     ],
     "edges": [
-      {"id": "TX-ADV-31", "from_account": "ESCROW-01", "to_account": "BUILDER-01", "amount": 50000.0, "timestamp": "2026-09-01T10:00:00Z"},
-      {"id": "TX-ADV-32", "from_account": "BUILDER-01", "to_account": "SUPPLIER-01", "amount": 48000.0, "timestamp": "2026-09-15T10:00:00Z"}
+      {
+        "id": "TX-RT-TP-02-1",
+        "from_account": "ORIGIN-RT-02",
+        "to_account": "SHELL-A-02",
+        "amount": 70000.0,
+        "timestamp": "2026-09-18T06:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-02-2",
+        "from_account": "SHELL-A-02",
+        "to_account": "SHELL-B-02",
+        "amount": 67200.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-02-3",
+        "from_account": "SHELL-B-02",
+        "to_account": "ORIGIN-RT-02",
+        "amount": 65800.0,
+        "timestamp": "2026-09-19T02:00:00Z"
+      }
     ],
-    "test_rationale": "14-day inter-hop latency represents standard construction invoicing, not rapid layering."
+    "test_rationale": "Closed directed cycle retaining >=85% capital within 72h."
+  },
+  {
+    "test_id": "ADV-RT-TP-03",
+    "description": "True FATF Round-Tripping: 3-hop circular flow returning 95.5% volume in 20h",
+    "expected_verdict": "flagged",
+    "expected_typology": "round_tripping",
+    "nodes": [
+      {
+        "id": "ORIGIN-RT-03",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SHELL-A-03",
+        "name": "Hop A",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SHELL-B-03",
+        "name": "Hop B",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RT-TP-03-1",
+        "from_account": "ORIGIN-RT-03",
+        "to_account": "SHELL-A-03",
+        "amount": 80000.0,
+        "timestamp": "2026-09-18T06:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-03-2",
+        "from_account": "SHELL-A-03",
+        "to_account": "SHELL-B-03",
+        "amount": 76800.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-03-3",
+        "from_account": "SHELL-B-03",
+        "to_account": "ORIGIN-RT-03",
+        "amount": 76400.0,
+        "timestamp": "2026-09-19T02:00:00Z"
+      }
+    ],
+    "test_rationale": "Closed directed cycle retaining >=85% capital within 72h."
+  },
+  {
+    "test_id": "ADV-RT-TP-04",
+    "description": "True FATF Round-Tripping: 3-hop circular flow returning 97.0% volume in 20h",
+    "expected_verdict": "flagged",
+    "expected_typology": "round_tripping",
+    "nodes": [
+      {
+        "id": "ORIGIN-RT-04",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SHELL-A-04",
+        "name": "Hop A",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SHELL-B-04",
+        "name": "Hop B",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RT-TP-04-1",
+        "from_account": "ORIGIN-RT-04",
+        "to_account": "SHELL-A-04",
+        "amount": 90000.0,
+        "timestamp": "2026-09-18T06:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-04-2",
+        "from_account": "SHELL-A-04",
+        "to_account": "SHELL-B-04",
+        "amount": 86400.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-04-3",
+        "from_account": "SHELL-B-04",
+        "to_account": "ORIGIN-RT-04",
+        "amount": 87300.0,
+        "timestamp": "2026-09-19T02:00:00Z"
+      }
+    ],
+    "test_rationale": "Closed directed cycle retaining >=85% capital within 72h."
+  },
+  {
+    "test_id": "ADV-RT-TP-05",
+    "description": "True FATF Round-Tripping: 3-hop circular flow returning 91.0% volume in 20h",
+    "expected_verdict": "flagged",
+    "expected_typology": "round_tripping",
+    "nodes": [
+      {
+        "id": "ORIGIN-RT-05",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SHELL-A-05",
+        "name": "Hop A",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SHELL-B-05",
+        "name": "Hop B",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RT-TP-05-1",
+        "from_account": "ORIGIN-RT-05",
+        "to_account": "SHELL-A-05",
+        "amount": 100000.0,
+        "timestamp": "2026-09-18T06:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-05-2",
+        "from_account": "SHELL-A-05",
+        "to_account": "SHELL-B-05",
+        "amount": 96000.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-05-3",
+        "from_account": "SHELL-B-05",
+        "to_account": "ORIGIN-RT-05",
+        "amount": 91000.0,
+        "timestamp": "2026-09-19T02:00:00Z"
+      }
+    ],
+    "test_rationale": "Closed directed cycle retaining >=85% capital within 72h."
+  },
+  {
+    "test_id": "ADV-RT-TP-06",
+    "description": "True FATF Round-Tripping: 3-hop circular flow returning 92.5% volume in 20h",
+    "expected_verdict": "flagged",
+    "expected_typology": "round_tripping",
+    "nodes": [
+      {
+        "id": "ORIGIN-RT-06",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SHELL-A-06",
+        "name": "Hop A",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SHELL-B-06",
+        "name": "Hop B",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RT-TP-06-1",
+        "from_account": "ORIGIN-RT-06",
+        "to_account": "SHELL-A-06",
+        "amount": 110000.0,
+        "timestamp": "2026-09-18T06:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-06-2",
+        "from_account": "SHELL-A-06",
+        "to_account": "SHELL-B-06",
+        "amount": 105600.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-06-3",
+        "from_account": "SHELL-B-06",
+        "to_account": "ORIGIN-RT-06",
+        "amount": 101750.0,
+        "timestamp": "2026-09-19T02:00:00Z"
+      }
+    ],
+    "test_rationale": "Closed directed cycle retaining >=85% capital within 72h."
+  },
+  {
+    "test_id": "ADV-RT-TP-07",
+    "description": "True FATF Round-Tripping: 3-hop circular flow returning 94.0% volume in 20h",
+    "expected_verdict": "flagged",
+    "expected_typology": "round_tripping",
+    "nodes": [
+      {
+        "id": "ORIGIN-RT-07",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SHELL-A-07",
+        "name": "Hop A",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SHELL-B-07",
+        "name": "Hop B",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RT-TP-07-1",
+        "from_account": "ORIGIN-RT-07",
+        "to_account": "SHELL-A-07",
+        "amount": 120000.0,
+        "timestamp": "2026-09-18T06:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-07-2",
+        "from_account": "SHELL-A-07",
+        "to_account": "SHELL-B-07",
+        "amount": 115200.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-07-3",
+        "from_account": "SHELL-B-07",
+        "to_account": "ORIGIN-RT-07",
+        "amount": 112800.0,
+        "timestamp": "2026-09-19T02:00:00Z"
+      }
+    ],
+    "test_rationale": "Closed directed cycle retaining >=85% capital within 72h."
+  },
+  {
+    "test_id": "ADV-RT-TP-08",
+    "description": "True FATF Round-Tripping: 3-hop circular flow returning 95.5% volume in 20h",
+    "expected_verdict": "flagged",
+    "expected_typology": "round_tripping",
+    "nodes": [
+      {
+        "id": "ORIGIN-RT-08",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SHELL-A-08",
+        "name": "Hop A",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SHELL-B-08",
+        "name": "Hop B",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RT-TP-08-1",
+        "from_account": "ORIGIN-RT-08",
+        "to_account": "SHELL-A-08",
+        "amount": 130000.0,
+        "timestamp": "2026-09-18T06:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-08-2",
+        "from_account": "SHELL-A-08",
+        "to_account": "SHELL-B-08",
+        "amount": 124800.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-08-3",
+        "from_account": "SHELL-B-08",
+        "to_account": "ORIGIN-RT-08",
+        "amount": 124150.00000000001,
+        "timestamp": "2026-09-19T02:00:00Z"
+      }
+    ],
+    "test_rationale": "Closed directed cycle retaining >=85% capital within 72h."
+  },
+  {
+    "test_id": "ADV-RT-TP-09",
+    "description": "True FATF Round-Tripping: 3-hop circular flow returning 97.0% volume in 20h",
+    "expected_verdict": "flagged",
+    "expected_typology": "round_tripping",
+    "nodes": [
+      {
+        "id": "ORIGIN-RT-09",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "SHELL-A-09",
+        "name": "Hop A",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "SHELL-B-09",
+        "name": "Hop B",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RT-TP-09-1",
+        "from_account": "ORIGIN-RT-09",
+        "to_account": "SHELL-A-09",
+        "amount": 140000.0,
+        "timestamp": "2026-09-18T06:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-09-2",
+        "from_account": "SHELL-A-09",
+        "to_account": "SHELL-B-09",
+        "amount": 134400.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RT-TP-09-3",
+        "from_account": "SHELL-B-09",
+        "to_account": "ORIGIN-RT-09",
+        "amount": 135800.0,
+        "timestamp": "2026-09-19T02:00:00Z"
+      }
+    ],
+    "test_rationale": "Closed directed cycle retaining >=85% capital within 72h."
+  },
+  {
+    "test_id": "ADV-RT-FP-01",
+    "description": "Benign long-delayed warranty return loop (latency 30 days > 72h)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "N1",
+        "name": "N1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "N2",
+        "name": "N2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "N3",
+        "name": "N3",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RTFP1-1",
+        "from_account": "N1",
+        "to_account": "N2",
+        "amount": 10000.0,
+        "timestamp": "2026-08-01T10:00:00Z"
+      },
+      {
+        "id": "TX-RTFP1-2",
+        "from_account": "N2",
+        "to_account": "N3",
+        "amount": 9500.0,
+        "timestamp": "2026-08-15T10:00:00Z"
+      },
+      {
+        "id": "TX-RTFP1-3",
+        "from_account": "N3",
+        "to_account": "N1",
+        "amount": 9000.0,
+        "timestamp": "2026-09-01T10:00:00Z"
+      }
+    ],
+    "test_rationale": "Inter-hop delay of 30 days."
+  },
+  {
+    "test_id": "ADV-RT-FP-02",
+    "description": "High capital leakage loop (retains only 30% volume, not 85%)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "NA",
+        "name": "NA",
+        "risk_rating": "low"
+      },
+      {
+        "id": "NB",
+        "name": "NB",
+        "risk_rating": "low"
+      },
+      {
+        "id": "NC",
+        "name": "NC",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RTFP2-1",
+        "from_account": "NA",
+        "to_account": "NB",
+        "amount": 100000.0,
+        "timestamp": "2026-09-18T08:00:00Z"
+      },
+      {
+        "id": "TX-RTFP2-2",
+        "from_account": "NB",
+        "to_account": "NC",
+        "amount": 50000.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RTFP2-3",
+        "from_account": "NC",
+        "to_account": "NA",
+        "amount": 30000.0,
+        "timestamp": "2026-09-18T18:00:00Z"
+      }
+    ],
+    "test_rationale": "70% capital dissipation indicates legitimate consumption/procurement."
+  },
+  {
+    "test_id": "ADV-RT-FP-03",
+    "description": "Open linear transit (A -> B -> C -> D, never returning to A)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "LA",
+        "name": "LA",
+        "risk_rating": "low"
+      },
+      {
+        "id": "LB",
+        "name": "LB",
+        "risk_rating": "low"
+      },
+      {
+        "id": "LC",
+        "name": "LC",
+        "risk_rating": "low"
+      },
+      {
+        "id": "LD",
+        "name": "LD",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RTFP3-1",
+        "from_account": "LA",
+        "to_account": "LB",
+        "amount": 10000.0,
+        "timestamp": "2026-09-18T08:00:00Z"
+      },
+      {
+        "id": "TX-RTFP3-2",
+        "from_account": "LB",
+        "to_account": "LC",
+        "amount": 9500.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RTFP3-3",
+        "from_account": "LC",
+        "to_account": "LD",
+        "amount": 9000.0,
+        "timestamp": "2026-09-18T18:00:00Z"
+      }
+    ],
+    "test_rationale": "No directed cycle exists; pure linear supply chain."
+  },
+  {
+    "test_id": "ADV-RT-FP-04",
+    "description": "2-node bilateral trade settlement (A -> B, B -> A normal vendor reconciliation)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "VEND-A",
+        "name": "Vendor A",
+        "risk_rating": "low"
+      },
+      {
+        "id": "VEND-B",
+        "name": "Vendor B",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RTFP4-1",
+        "from_account": "VEND-A",
+        "to_account": "VEND-B",
+        "amount": 20000.0,
+        "timestamp": "2026-09-18T08:00:00Z"
+      },
+      {
+        "id": "TX-RTFP4-2",
+        "from_account": "VEND-B",
+        "to_account": "VEND-A",
+        "amount": 19500.0,
+        "timestamp": "2026-09-18T14:00:00Z"
+      }
+    ],
+    "test_rationale": "2-node bilateral exchange, below >=3 node FATF multi-party cycle threshold."
+  },
+  {
+    "test_id": "ADV-RT-FP-05",
+    "description": "Reverse timestamp cycle (closing transaction occurred before opening transaction)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "R1",
+        "name": "R1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "R2",
+        "name": "R2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "R3",
+        "name": "R3",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RTFP5-1",
+        "from_account": "R1",
+        "to_account": "R2",
+        "amount": 30000.0,
+        "timestamp": "2026-09-18T18:00:00Z"
+      },
+      {
+        "id": "TX-RTFP5-2",
+        "from_account": "R2",
+        "to_account": "R3",
+        "amount": 29000.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RTFP5-3",
+        "from_account": "R3",
+        "to_account": "R1",
+        "amount": 28500.0,
+        "timestamp": "2026-09-18T06:00:00Z"
+      }
+    ],
+    "test_rationale": "Non-chronological; each subsequent leg occurred prior to the preceding transfer."
+  },
+  {
+    "test_id": "ADV-RT-FP-06",
+    "description": "Cycle taking 144 hours (> 72 hour FATF window)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "T1",
+        "name": "T1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "T2",
+        "name": "T2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "T3",
+        "name": "T3",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RTFP6-1",
+        "from_account": "T1",
+        "to_account": "T2",
+        "amount": 40000.0,
+        "timestamp": "2026-09-10T10:00:00Z"
+      },
+      {
+        "id": "TX-RTFP6-2",
+        "from_account": "T2",
+        "to_account": "T3",
+        "amount": 38000.0,
+        "timestamp": "2026-09-12T10:00:00Z"
+      },
+      {
+        "id": "TX-RTFP6-3",
+        "from_account": "T3",
+        "to_account": "T1",
+        "amount": 36000.0,
+        "timestamp": "2026-09-16T10:00:00Z"
+      }
+    ],
+    "test_rationale": "144 hour total duration exceeds 72h round-tripping parameter."
+  },
+  {
+    "test_id": "ADV-RT-FP-07",
+    "description": "Cycle with intermediate node sending negligible volume out",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "Z1",
+        "name": "Z1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "Z2",
+        "name": "Z2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "Z3",
+        "name": "Z3",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RTFP7-1",
+        "from_account": "Z1",
+        "to_account": "Z2",
+        "amount": 15000.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-RTFP7-2",
+        "from_account": "Z2",
+        "to_account": "Z3",
+        "amount": 100.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-RTFP7-3",
+        "from_account": "Z3",
+        "to_account": "Z1",
+        "amount": 95.0,
+        "timestamp": "2026-09-18T14:00:00Z"
+      }
+    ],
+    "test_rationale": "Negligible volume pass-through."
+  },
+  {
+    "test_id": "ADV-RT-FP-08",
+    "description": "Bilateral escrow deposit and full release between 2 legal entities",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "ESC-A",
+        "name": "Escrow Agent",
+        "risk_rating": "low"
+      },
+      {
+        "id": "BUYER-B",
+        "name": "Buyer Corp",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RTFP8-1",
+        "from_account": "BUYER-B",
+        "to_account": "ESC-A",
+        "amount": 100000.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-RTFP8-2",
+        "from_account": "ESC-A",
+        "to_account": "BUYER-B",
+        "amount": 100000.0,
+        "timestamp": "2026-09-18T16:00:00Z"
+      }
+    ],
+    "test_rationale": "2-node escrow cancellation."
+  },
+  {
+    "test_id": "ADV-RT-FP-09",
+    "description": "Benign dividend return flow across 2 affiliated entities",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "PARENT",
+        "name": "Parent Co",
+        "risk_rating": "low"
+      },
+      {
+        "id": "SUB",
+        "name": "Subsidiary Co",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-RTFP9-1",
+        "from_account": "PARENT",
+        "to_account": "SUB",
+        "amount": 50000.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-RTFP9-2",
+        "from_account": "SUB",
+        "to_account": "PARENT",
+        "amount": 48000.0,
+        "timestamp": "2026-09-18T17:00:00Z"
+      }
+    ],
+    "test_rationale": "2-party intra-company funding."
+  },
+  {
+    "test_id": "ADV-LAY-TP-01",
+    "description": "True FATF Rapid Layering: 3-hop chain with 1h inter-hop latency preserving 94% volume",
+    "expected_verdict": "flagged",
+    "expected_typology": "rapid_layering",
+    "nodes": [
+      {
+        "id": "LAY-ORG-01",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "LAY-H1-01",
+        "name": "Hop 1",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H2-01",
+        "name": "Hop 2",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H3-01",
+        "name": "Hop 3",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAY-TP-01-1",
+        "from_account": "LAY-ORG-01",
+        "to_account": "LAY-H1-01",
+        "amount": 85000.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-01-2",
+        "from_account": "LAY-H1-01",
+        "to_account": "LAY-H2-01",
+        "amount": 82450.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-01-3",
+        "from_account": "LAY-H2-01",
+        "to_account": "LAY-H3-01",
+        "amount": 79900.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Pass-through chain >=3 hops, <3h dwell time, >=85% volume retention."
+  },
+  {
+    "test_id": "ADV-LAY-TP-02",
+    "description": "True FATF Rapid Layering: 3-hop chain with 1h inter-hop latency preserving 94% volume",
+    "expected_verdict": "flagged",
+    "expected_typology": "rapid_layering",
+    "nodes": [
+      {
+        "id": "LAY-ORG-02",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "LAY-H1-02",
+        "name": "Hop 1",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H2-02",
+        "name": "Hop 2",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H3-02",
+        "name": "Hop 3",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAY-TP-02-1",
+        "from_account": "LAY-ORG-02",
+        "to_account": "LAY-H1-02",
+        "amount": 90000.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-02-2",
+        "from_account": "LAY-H1-02",
+        "to_account": "LAY-H2-02",
+        "amount": 87300.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-02-3",
+        "from_account": "LAY-H2-02",
+        "to_account": "LAY-H3-02",
+        "amount": 84600.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Pass-through chain >=3 hops, <3h dwell time, >=85% volume retention."
+  },
+  {
+    "test_id": "ADV-LAY-TP-03",
+    "description": "True FATF Rapid Layering: 3-hop chain with 1h inter-hop latency preserving 94% volume",
+    "expected_verdict": "flagged",
+    "expected_typology": "rapid_layering",
+    "nodes": [
+      {
+        "id": "LAY-ORG-03",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "LAY-H1-03",
+        "name": "Hop 1",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H2-03",
+        "name": "Hop 2",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H3-03",
+        "name": "Hop 3",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAY-TP-03-1",
+        "from_account": "LAY-ORG-03",
+        "to_account": "LAY-H1-03",
+        "amount": 95000.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-03-2",
+        "from_account": "LAY-H1-03",
+        "to_account": "LAY-H2-03",
+        "amount": 92150.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-03-3",
+        "from_account": "LAY-H2-03",
+        "to_account": "LAY-H3-03",
+        "amount": 89300.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Pass-through chain >=3 hops, <3h dwell time, >=85% volume retention."
+  },
+  {
+    "test_id": "ADV-LAY-TP-04",
+    "description": "True FATF Rapid Layering: 3-hop chain with 1h inter-hop latency preserving 94% volume",
+    "expected_verdict": "flagged",
+    "expected_typology": "rapid_layering",
+    "nodes": [
+      {
+        "id": "LAY-ORG-04",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "LAY-H1-04",
+        "name": "Hop 1",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H2-04",
+        "name": "Hop 2",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H3-04",
+        "name": "Hop 3",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAY-TP-04-1",
+        "from_account": "LAY-ORG-04",
+        "to_account": "LAY-H1-04",
+        "amount": 100000.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-04-2",
+        "from_account": "LAY-H1-04",
+        "to_account": "LAY-H2-04",
+        "amount": 97000.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-04-3",
+        "from_account": "LAY-H2-04",
+        "to_account": "LAY-H3-04",
+        "amount": 94000.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Pass-through chain >=3 hops, <3h dwell time, >=85% volume retention."
+  },
+  {
+    "test_id": "ADV-LAY-TP-05",
+    "description": "True FATF Rapid Layering: 3-hop chain with 1h inter-hop latency preserving 94% volume",
+    "expected_verdict": "flagged",
+    "expected_typology": "rapid_layering",
+    "nodes": [
+      {
+        "id": "LAY-ORG-05",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "LAY-H1-05",
+        "name": "Hop 1",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H2-05",
+        "name": "Hop 2",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H3-05",
+        "name": "Hop 3",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAY-TP-05-1",
+        "from_account": "LAY-ORG-05",
+        "to_account": "LAY-H1-05",
+        "amount": 105000.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-05-2",
+        "from_account": "LAY-H1-05",
+        "to_account": "LAY-H2-05",
+        "amount": 101850.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-05-3",
+        "from_account": "LAY-H2-05",
+        "to_account": "LAY-H3-05",
+        "amount": 98700.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Pass-through chain >=3 hops, <3h dwell time, >=85% volume retention."
+  },
+  {
+    "test_id": "ADV-LAY-TP-06",
+    "description": "True FATF Rapid Layering: 3-hop chain with 1h inter-hop latency preserving 94% volume",
+    "expected_verdict": "flagged",
+    "expected_typology": "rapid_layering",
+    "nodes": [
+      {
+        "id": "LAY-ORG-06",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "LAY-H1-06",
+        "name": "Hop 1",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H2-06",
+        "name": "Hop 2",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H3-06",
+        "name": "Hop 3",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAY-TP-06-1",
+        "from_account": "LAY-ORG-06",
+        "to_account": "LAY-H1-06",
+        "amount": 110000.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-06-2",
+        "from_account": "LAY-H1-06",
+        "to_account": "LAY-H2-06",
+        "amount": 106700.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-06-3",
+        "from_account": "LAY-H2-06",
+        "to_account": "LAY-H3-06",
+        "amount": 103400.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Pass-through chain >=3 hops, <3h dwell time, >=85% volume retention."
+  },
+  {
+    "test_id": "ADV-LAY-TP-07",
+    "description": "True FATF Rapid Layering: 3-hop chain with 1h inter-hop latency preserving 94% volume",
+    "expected_verdict": "flagged",
+    "expected_typology": "rapid_layering",
+    "nodes": [
+      {
+        "id": "LAY-ORG-07",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "LAY-H1-07",
+        "name": "Hop 1",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H2-07",
+        "name": "Hop 2",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H3-07",
+        "name": "Hop 3",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAY-TP-07-1",
+        "from_account": "LAY-ORG-07",
+        "to_account": "LAY-H1-07",
+        "amount": 115000.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-07-2",
+        "from_account": "LAY-H1-07",
+        "to_account": "LAY-H2-07",
+        "amount": 111550.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-07-3",
+        "from_account": "LAY-H2-07",
+        "to_account": "LAY-H3-07",
+        "amount": 108100.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Pass-through chain >=3 hops, <3h dwell time, >=85% volume retention."
+  },
+  {
+    "test_id": "ADV-LAY-TP-08",
+    "description": "True FATF Rapid Layering: 3-hop chain with 1h inter-hop latency preserving 94% volume",
+    "expected_verdict": "flagged",
+    "expected_typology": "rapid_layering",
+    "nodes": [
+      {
+        "id": "LAY-ORG-08",
+        "name": "Originator",
+        "risk_rating": "high"
+      },
+      {
+        "id": "LAY-H1-08",
+        "name": "Hop 1",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H2-08",
+        "name": "Hop 2",
+        "risk_rating": "critical"
+      },
+      {
+        "id": "LAY-H3-08",
+        "name": "Hop 3",
+        "risk_rating": "critical"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAY-TP-08-1",
+        "from_account": "LAY-ORG-08",
+        "to_account": "LAY-H1-08",
+        "amount": 120000.0,
+        "timestamp": "2026-09-18T09:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-08-2",
+        "from_account": "LAY-H1-08",
+        "to_account": "LAY-H2-08",
+        "amount": 116400.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAY-TP-08-3",
+        "from_account": "LAY-H2-08",
+        "to_account": "LAY-H3-08",
+        "amount": 112800.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Pass-through chain >=3 hops, <3h dwell time, >=85% volume retention."
+  },
+  {
+    "test_id": "ADV-LAY-FP-01",
+    "description": "Benign construction escrow with 14-day dwell time",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "ESC-01",
+        "name": "Escrow",
+        "risk_rating": "low"
+      },
+      {
+        "id": "BLD-01",
+        "name": "Builder",
+        "risk_rating": "low"
+      },
+      {
+        "id": "ST-01",
+        "name": "Steel Co",
+        "risk_rating": "low"
+      },
+      {
+        "id": "SUB-01",
+        "name": "Subcontractor",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAYFP1-1",
+        "from_account": "ESC-01",
+        "to_account": "BLD-01",
+        "amount": 50000.0,
+        "timestamp": "2026-09-01T10:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP1-2",
+        "from_account": "BLD-01",
+        "to_account": "ST-01",
+        "amount": 48000.0,
+        "timestamp": "2026-09-15T10:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP1-3",
+        "from_account": "ST-01",
+        "to_account": "SUB-01",
+        "amount": 46000.0,
+        "timestamp": "2026-09-29T10:00:00Z"
+      }
+    ],
+    "test_rationale": "14-day dwell time between steps represents genuine construction invoicing."
+  },
+  {
+    "test_id": "ADV-LAY-FP-02",
+    "description": "Retail manufacturing chain with 50% value drop",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "M-ORG",
+        "name": "Retailer",
+        "risk_rating": "low"
+      },
+      {
+        "id": "M-MFG",
+        "name": "Factory",
+        "risk_rating": "low"
+      },
+      {
+        "id": "M-RAW",
+        "name": "Raw Material",
+        "risk_rating": "low"
+      },
+      {
+        "id": "M-MINE",
+        "name": "Mining Co",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAYFP2-1",
+        "from_account": "M-ORG",
+        "to_account": "M-MFG",
+        "amount": 100000.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP2-2",
+        "from_account": "M-MFG",
+        "to_account": "M-RAW",
+        "amount": 50000.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP2-3",
+        "from_account": "M-RAW",
+        "to_account": "M-MINE",
+        "amount": 25000.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      }
+    ],
+    "test_rationale": "Volume pass-through is only 25%."
+  },
+  {
+    "test_id": "ADV-LAY-FP-03",
+    "description": "2-hop transfer only (below 3 hop layering threshold)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "H-A",
+        "name": "A",
+        "risk_rating": "low"
+      },
+      {
+        "id": "H-B",
+        "name": "B",
+        "risk_rating": "low"
+      },
+      {
+        "id": "H-C",
+        "name": "C",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAYFP3-1",
+        "from_account": "H-A",
+        "to_account": "H-B",
+        "amount": 30000.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP3-2",
+        "from_account": "H-B",
+        "to_account": "H-C",
+        "amount": 29500.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Only 2 hops."
+  },
+  {
+    "test_id": "ADV-LAY-FP-04",
+    "description": "3-hop chain with 12 hour inter-hop latency (> 3h threshold)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "P1",
+        "name": "P1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "P2",
+        "name": "P2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "P3",
+        "name": "P3",
+        "risk_rating": "low"
+      },
+      {
+        "id": "P4",
+        "name": "P4",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAYFP4-1",
+        "from_account": "P1",
+        "to_account": "P2",
+        "amount": 40000.0,
+        "timestamp": "2026-09-18T00:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP4-2",
+        "from_account": "P2",
+        "to_account": "P3",
+        "amount": 39000.0,
+        "timestamp": "2026-09-18T14:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP4-3",
+        "from_account": "P3",
+        "to_account": "P4",
+        "amount": 38000.0,
+        "timestamp": "2026-09-19T04:00:00Z"
+      }
+    ],
+    "test_rationale": "14h dwell time per hop."
+  },
+  {
+    "test_id": "ADV-LAY-FP-05",
+    "description": "Unconnected transit paths (A -> B -> C and X -> Y -> Z)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "A1",
+        "name": "A1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "A2",
+        "name": "A2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "A3",
+        "name": "A3",
+        "risk_rating": "low"
+      },
+      {
+        "id": "B1",
+        "name": "B1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "B2",
+        "name": "B2",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAYFP5-1",
+        "from_account": "A1",
+        "to_account": "A2",
+        "amount": 20000.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP5-2",
+        "from_account": "A2",
+        "to_account": "A3",
+        "amount": 19500.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP5-3",
+        "from_account": "B1",
+        "to_account": "B2",
+        "amount": 19000.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      }
+    ],
+    "test_rationale": "Disconnected components."
+  },
+  {
+    "test_id": "ADV-LAY-FP-06",
+    "description": "Layering chain with reverse chronological ordering",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "Q1",
+        "name": "Q1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "Q2",
+        "name": "Q2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "Q3",
+        "name": "Q3",
+        "risk_rating": "low"
+      },
+      {
+        "id": "Q4",
+        "name": "Q4",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAYFP6-1",
+        "from_account": "Q1",
+        "to_account": "Q2",
+        "amount": 50000.0,
+        "timestamp": "2026-09-18T18:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP6-2",
+        "from_account": "Q2",
+        "to_account": "Q3",
+        "amount": 49000.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP6-3",
+        "from_account": "Q3",
+        "to_account": "Q4",
+        "amount": 48000.0,
+        "timestamp": "2026-09-18T06:00:00Z"
+      }
+    ],
+    "test_rationale": "Negative inter-hop latency."
+  },
+  {
+    "test_id": "ADV-LAY-FP-07",
+    "description": "Small individual retail pass-through (10 per hop)",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "S1",
+        "name": "S1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "S2",
+        "name": "S2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "S3",
+        "name": "S3",
+        "risk_rating": "low"
+      },
+      {
+        "id": "S4",
+        "name": "S4",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAYFP7-1",
+        "from_account": "S1",
+        "to_account": "S2",
+        "amount": 10.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP7-2",
+        "from_account": "S2",
+        "to_account": "S3",
+        "amount": 10.0,
+        "timestamp": "2026-09-18T10:30:00Z"
+      },
+      {
+        "id": "TX-LAYFP7-3",
+        "from_account": "S3",
+        "to_account": "S4",
+        "amount": 10.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      }
+    ],
+    "test_rationale": "Trivial consumer test transactions."
+  },
+  {
+    "test_id": "ADV-LAY-FP-08",
+    "description": "High leakage pass-through with fee deduction exceeding 20%",
+    "expected_verdict": "benign",
+    "nodes": [
+      {
+        "id": "F1",
+        "name": "F1",
+        "risk_rating": "low"
+      },
+      {
+        "id": "F2",
+        "name": "F2",
+        "risk_rating": "low"
+      },
+      {
+        "id": "F3",
+        "name": "F3",
+        "risk_rating": "low"
+      },
+      {
+        "id": "F4",
+        "name": "F4",
+        "risk_rating": "low"
+      }
+    ],
+    "edges": [
+      {
+        "id": "TX-LAYFP8-1",
+        "from_account": "F1",
+        "to_account": "F2",
+        "amount": 50000.0,
+        "timestamp": "2026-09-18T10:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP8-2",
+        "from_account": "F2",
+        "to_account": "F3",
+        "amount": 38000.0,
+        "timestamp": "2026-09-18T11:00:00Z"
+      },
+      {
+        "id": "TX-LAYFP8-3",
+        "from_account": "F3",
+        "to_account": "F4",
+        "amount": 28000.0,
+        "timestamp": "2026-09-18T12:00:00Z"
+      }
+    ],
+    "test_rationale": "Volume retention falls below 85% at intermediate steps."
   }
 ]
