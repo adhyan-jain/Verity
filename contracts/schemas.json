@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VerityDataContracts",
+  "description": "Single source of truth data contracts for Verity detection engines, agent, and dashboard",
+  "definitions": {
+    "TransactionRecord": {
+      "type": "object",
+      "required": ["id", "tier", "timestamp", "amount", "source_dataset"],
+      "properties": {
+        "id": { "type": "string" },
+        "tier": { "type": "string", "enum": ["real_card", "real_ledger", "synthetic_network"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "account_id": { "type": ["string", "null"] },
+        "amount": { "type": "number" },
+        "direction": { "type": ["string", "null"], "enum": ["debit", "credit", null] },
+        "raw_narration": { "type": ["string", "null"] },
+        "source_dataset": { "type": "string" }
+      }
+    },
+    "FraudExplanation": {
+      "type": "object",
+      "required": ["transaction_id", "risk_score", "verdict", "top_factors", "model_version"],
+      "properties": {
+        "transaction_id": { "type": "string" },
+        "risk_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "verdict": { "type": "string", "enum": ["flagged", "clear"] },
+        "top_factors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["feature", "human_label", "contribution", "interpretable"],
+            "properties": {
+              "feature": { "type": "string" },
+              "human_label": { "type": "string" },
+              "contribution": { "type": "number" },
+              "interpretable": { "type": "boolean" }
+            }
+          }
+        },
+        "model_version": { "type": "string" }
+      }
+    },
+    "ReconciliationAnomaly": {
+      "type": "object",
+      "required": ["account_id", "anomaly_type", "window_start", "window_end", "severity", "baseline_value", "observed_value", "evidence_transaction_ids"],
+      "properties": {
+        "account_id": { "type": "string" },
+        "anomaly_type": { "type": "string", "enum": ["balance_break", "timing_spike", "reversal_outlier"] },
+        "window_start": { "type": "string", "format": "date-time" },
+        "window_end": { "type": "string", "format": "date-time" },
+        "severity": { "type": "number" },
+        "baseline_value": { "type": "number" },
+        "observed_value": { "type": "number" },
+        "evidence_transaction_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "GraphWalkStep": {
+      "type": "object",
+      "required": ["step_index", "from_account", "to_account", "tier", "amount", "timestamp", "tool_call_id"],
+      "properties": {
+        "step_index": { "type": "integer" },
+        "from_account": { "type": "string" },
+        "to_account": { "type": "string" },
+        "tier": { "type": "string", "enum": ["real_ledger", "synthetic_network"] },
+        "amount": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "narration": { "type": ["string", "null"] },
+        "tool_call_id": { "type": "string" }
+      }
+    },
+    "TypologyFlag": {
+      "type": "object",
+      "required": ["flag_id", "typology", "fatf_reference", "involved_accounts", "evidence_transaction_ids", "confidence"],
+      "properties": {
+        "flag_id": { "type": "string" },
+        "typology": { "type": "string", "enum": ["structuring", "round_tripping", "rapid_layering"] },
+        "fatf_reference": { "type": "string" },
+        "involved_accounts": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "evidence_transaction_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "AgentTraceEvent": {
+      "type": "object",
+      "required": ["event_id", "case_id", "timestamp", "tool_called", "tool_input", "tool_output_summary", "narration_sentence"],
+      "properties": {
+        "event_id": { "type": "string" },
+        "case_id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "tool_called": { "type": "string", "enum": ["get_transaction", "get_shap_explanation", "walk_graph", "counterfactual"] },
+        "tool_input": { "type": "object" },
+        "tool_output_summary": { "type": "string" },
+        "narration_sentence": { "type": "string" }
+      }
+    },
+    "Case": {
+      "type": "object",
+      "required": ["case_id", "tier_origin", "status", "primary_transaction_id", "risk_score", "trace_events", "narrative"],
+      "properties": {
+        "case_id": { "type": "string" },
+        "tier_origin": { "type": "string", "enum": ["real_card", "real_ledger", "synthetic_network"] },
+        "status": { "type": "string", "enum": ["open", "investigating", "closed"] },
+        "primary_transaction_id": { "type": "string" },
+        "risk_score": { "type": "number" },
+        "trace_events": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/AgentTraceEvent" }
+        },
+        "narrative": { "type": "string" }
+      }
+    }
+  }
+}
