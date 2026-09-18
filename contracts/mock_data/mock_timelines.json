@@ -1,0 +1,31 @@
+[
+  {
+    "account_id": "ACC-1092",
+    "account_name": "Acme Retail Trade Account",
+    "total_transactions": 48,
+    "anomalies": [
+      {
+        "anomaly_type": "timing_spike",
+        "severity": 0.88,
+        "window_start": "2026-09-15T00:00:00Z",
+        "window_end": "2026-09-17T23:59:59Z",
+        "observed_value": 9.4,
+        "baseline_value": 2.1
+      },
+      {
+        "anomaly_type": "balance_break",
+        "severity": 0.92,
+        "window_start": "2026-09-16T12:00:00Z",
+        "window_end": "2026-09-16T18:00:00Z",
+        "observed_value": -3200.0,
+        "baseline_value": 15400.0
+      }
+    ],
+    "transactions": [
+      { "id": "TX-LEDGER-3001", "timestamp": "2026-09-14T10:00:00Z", "amount": 1200.0, "direction": "credit", "balance": 14200.0, "narration": "INWARD RTGS SUPPLIER" },
+      { "id": "TX-LEDGER-3005", "timestamp": "2026-09-15T11:30:00Z", "amount": 2500.0, "direction": "debit", "balance": 11700.0, "narration": "VENDOR PAYROLL" },
+      { "id": "TX-LEDGER-3011", "timestamp": "2026-09-16T14:15:00Z", "amount": 12500.0, "direction": "debit", "balance": -800.0, "narration": "BULK UNREGISTERED TXFR" },
+      { "id": "TX-LEDGER-3012", "timestamp": "2026-09-16T15:20:00Z", "amount": 2400.0, "direction": "debit", "balance": -3200.0, "narration": "URGENT OVERDRAFT TXFR" }
+    ]
+  }
+]

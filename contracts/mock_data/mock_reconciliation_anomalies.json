@@ -1,0 +1,32 @@
+[
+  {
+    "account_id": "ACC-1092",
+    "anomaly_type": "timing_spike",
+    "window_start": "2026-09-15T00:00:00Z",
+    "window_end": "2026-09-17T23:59:59Z",
+    "severity": 0.88,
+    "baseline_value": 2.1,
+    "observed_value": 9.4,
+    "evidence_transaction_ids": ["TX-LEDGER-3011", "TX-LEDGER-3012", "TX-LEDGER-3015"]
+  },
+  {
+    "account_id": "ACC-1092",
+    "anomaly_type": "balance_break",
+    "window_start": "2026-09-16T12:00:00Z",
+    "window_end": "2026-09-16T18:00:00Z",
+    "severity": 0.92,
+    "baseline_value": 15400.0,
+    "observed_value": -3200.0,
+    "evidence_transaction_ids": ["TX-LEDGER-3011"]
+  },
+  {
+    "account_id": "ACC-2045",
+    "anomaly_type": "reversal_outlier",
+    "window_start": "2026-09-10T08:00:00Z",
+    "window_end": "2026-09-11T12:00:00Z",
+    "severity": 0.76,
+    "baseline_value": 0.02,
+    "observed_value": 0.45,
+    "evidence_transaction_ids": ["TX-LEDGER-4100", "TX-LEDGER-4102"]
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "transaction_id": "TX-CARD-9842",
+    "risk_score": 0.89,
+    "verdict": "flagged",
+    "top_factors": [
+      { "feature": "Amount", "human_label": "Transaction amount ($4,850.00)", "contribution": 0.42, "interpretable": true },
+      { "feature": "Time", "human_label": "Transaction time (03:22 AM)", "contribution": 0.19, "interpretable": true },
+      { "feature": "V14", "human_label": "Anonymized behavioral signal V14", "contribution": 0.28, "interpretable": false },
+      { "feature": "V12", "human_label": "Anonymized behavioral signal V12", "contribution": 0.15, "interpretable": false },
+      { "feature": "V10", "human_label": "Anonymized behavioral signal V10", "contribution": 0.11, "interpretable": false }
+    ],
+    "model_version": "v1.0-benchmark-winner"
+  },
+  {
+    "transaction_id": "TX-CARD-1002",
+    "risk_score": 0.12,
+    "verdict": "clear",
+    "top_factors": [
+      { "feature": "Amount", "human_label": "Transaction amount ($24.50)", "contribution": -0.35, "interpretable": true },
+      { "feature": "Time", "human_label": "Transaction time (02:14 PM)", "contribution": -0.22, "interpretable": true },
+      { "feature": "V14", "human_label": "Anonymized behavioral signal V14", "contribution": -0.15, "interpretable": false }
+    ],
+    "model_version": "v1.0-benchmark-winner"
+  }
+]

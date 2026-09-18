@@ -1,0 +1,26 @@
+[
+  {
+    "flag_id": "FLAG-FATF-001",
+    "typology": "round_tripping",
+    "fatf_reference": "FATF Guidance on Concealment of Beneficial Ownership (Oct 2018) - Circular Fund Routing",
+    "involved_accounts": ["ACC-SYN-401", "ACC-SYN-402", "ACC-SYN-403"],
+    "evidence_transaction_ids": ["TX-SYNTH-5501", "TX-SYNTH-5502", "TX-SYNTH-5503"],
+    "confidence": 0.94
+  },
+  {
+    "flag_id": "FLAG-FATF-002",
+    "typology": "structuring",
+    "fatf_reference": "FATF Methodology - Criteria 10.1 & 10.3 / Sub-threshold Smurfing Patterns",
+    "involved_accounts": ["ACC-SYN-601", "ACC-SYN-602", "ACC-SYN-603", "ACC-SYN-604"],
+    "evidence_transaction_ids": ["TX-SYNTH-6101", "TX-SYNTH-6102", "TX-SYNTH-6103", "TX-SYNTH-6104"],
+    "confidence": 0.91
+  },
+  {
+    "flag_id": "FLAG-FATF-003",
+    "typology": "rapid_layering",
+    "fatf_reference": "FATF Money Laundering Typologies - High-Velocity Pass-Through Transfers",
+    "involved_accounts": ["ACC-SYN-701", "ACC-SYN-702", "ACC-SYN-703", "ACC-SYN-704", "ACC-SYN-705"],
+    "evidence_transaction_ids": ["TX-SYNTH-7201", "TX-SYNTH-7202", "TX-SYNTH-7203", "TX-SYNTH-7204"],
+    "confidence": 0.88
+  }
+]

@@ -1,0 +1,77 @@
+[
+  {
+    "case_id": "CASE-CARD-001",
+    "tier_origin": "real_card",
+    "status": "open",
+    "primary_transaction_id": "TX-CARD-9842",
+    "risk_score": 0.89,
+    "trace_events": [
+      {
+        "event_id": "EVT-101",
+        "case_id": "CASE-CARD-001",
+        "timestamp": "2026-09-18T09:15:00Z",
+        "tool_called": "get_transaction",
+        "tool_input": { "transaction_id": "TX-CARD-9842" },
+        "tool_output_summary": "Transaction TX-CARD-9842 retrieved: amount $4,850.00 at 03:22 AM.",
+        "narration_sentence": "Retrieved transaction TX-CARD-9842 for $4,850.00 processed at an anomalous off-hours timestamp (03:22 AM)."
+      },
+      {
+        "event_id": "EVT-102",
+        "case_id": "CASE-CARD-001",
+        "timestamp": "2026-09-18T09:15:05Z",
+        "tool_called": "get_shap_explanation",
+        "tool_input": { "transaction_id": "TX-CARD-9842" },
+        "tool_output_summary": "SHAP model returned risk score 0.89 driven by Amount (+0.42), V14 (+0.28), and Time (+0.19).",
+        "narration_sentence": "SHAP feature attribution indicates elevated risk driven primarily by unusually high amount (+0.42 contribution) and temporal anomaly (+0.19 contribution)."
+      }
+    ],
+    "narrative": "Retrieved transaction TX-CARD-9842 for $4,850.00 processed at an anomalous off-hours timestamp (03:22 AM). SHAP feature attribution indicates elevated risk driven primarily by unusually high amount (+0.42 contribution) and temporal anomaly (+0.19 contribution)."
+  },
+  {
+    "case_id": "CASE-LEDGER-002",
+    "tier_origin": "real_ledger",
+    "status": "open",
+    "primary_transaction_id": "TX-LEDGER-3011",
+    "risk_score": 0.74,
+    "trace_events": [
+      {
+        "event_id": "EVT-201",
+        "case_id": "CASE-LEDGER-002",
+        "timestamp": "2026-09-18T09:20:00Z",
+        "tool_called": "get_transaction",
+        "tool_input": { "transaction_id": "TX-LEDGER-3011" },
+        "tool_output_summary": "Retrieved account ACC-1092 ledger transaction of $12,500.00 debit.",
+        "narration_sentence": "Retrieved ledger entry TX-LEDGER-3011 for account ACC-1092 representing a $12,500.00 debit transfer."
+      },
+      {
+        "event_id": "EVT-202",
+        "case_id": "CASE-LEDGER-002",
+        "timestamp": "2026-09-18T09:20:06Z",
+        "tool_called": "walk_graph",
+        "tool_input": { "account_id": "ACC-1092", "tier": "real_ledger" },
+        "tool_output_summary": "Walked account ACC-1092 history: identified 3 rapid debit spikes exceeding 4x the 30-day moving average.",
+        "narration_sentence": "Account history analysis detected a severe timing spike anomaly where transaction velocity exceeded 4x baseline within a 48-hour window."
+      }
+    ],
+    "narrative": "Retrieved ledger entry TX-LEDGER-3011 for account ACC-1092 representing a $12,500.00 debit transfer. Account history analysis detected a severe timing spike anomaly where transaction velocity exceeded 4x baseline within a 48-hour window."
+  },
+  {
+    "case_id": "CASE-SYNTH-003",
+    "tier_origin": "synthetic_network",
+    "status": "open",
+    "primary_transaction_id": "TX-SYNTH-5501",
+    "risk_score": 0.94,
+    "trace_events": [
+      {
+        "event_id": "EVT-301",
+        "case_id": "CASE-SYNTH-003",
+        "timestamp": "2026-09-18T09:30:00Z",
+        "tool_called": "walk_graph",
+        "tool_input": { "account_id": "ACC-SYN-401", "tier": "synthetic_network" },
+        "tool_output_summary": "Walked 3 hops across ACC-SYN-401 -> ACC-SYN-402 -> ACC-SYN-403 -> ACC-SYN-401.",
+        "narration_sentence": "Graph traversal revealed a closed round-tripping topology circulating $49,000 across 3 intermediate accounts within 6 hours."
+      }
+    ],
+    "narrative": "Graph traversal revealed a closed round-tripping topology circulating $49,000 across 3 intermediate accounts within 6 hours."
+  }
+]
