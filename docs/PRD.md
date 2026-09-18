@@ -13,10 +13,10 @@
 **Verity** is a unified financial-crime analyst workspace — two detection engines (card fraud and account-level ledger risk) feeding a single case queue, paired with an AI agent that investigates each flagged case and can be questioned about its own reasoning live.
 
 ### 1.2 Target Persona
-* **Name:** Priya
+* **Name:** Chitrita
 * **Role:** Financial-Crime Analyst
 * **Organization:** Mid-size digital-first bank / Non-Banking Financial Company (NBFC).
-* **Pain Point:** The institution is too lean to run separate card-fraud and AML (Anti-Money Laundering) investigation teams. Priya handles both high-velocity credit card alert triage and deep ledger account-risk investigations. She suffers from alert fatigue, siloed tools, ungrounded AI summaries with hallucinated graph hops, and opaque model predictions.
+* **Pain Point:** The institution is too lean to run separate card-fraud and AML (Anti-Money Laundering) investigation teams. Chitrita handles both high-velocity credit card alert triage and deep ledger account-risk investigations. She suffers from alert fatigue, siloed tools, ungrounded AI summaries with hallucinated graph hops, and opaque model predictions.
 * **Verity's Promise:** A single, trustworthy cockpit that automates trace-grounded investigations, exposes mathematical SHAP attributions, visualizes sparse ledger timelines alongside complex laundering networks, and answers live counterfactual questions with recomputed models.
 
 ---

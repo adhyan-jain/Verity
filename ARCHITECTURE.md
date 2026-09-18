@@ -18,7 +18,7 @@ trained the model, started all 4 services, drove the dashboard in a real browser
 | `contracts/schemas.json` | All (agreed hour 1) | JSON Schema | — | — | Present, used as the intended single source of truth. Engines mostly, but not perfectly, conform (§3.3). |
 
 ### Intended end-to-end flow
-1. Analyst (Priya) opens the dashboard, sees a **unified case queue** mixing card-fraud and
+1. Analyst (Chitrita) opens the dashboard, sees a **unified case queue** mixing card-fraud and
    ledger/typology alerts.
 2. Selecting a case shows the primary transaction, SHAP factors (fraud) or timeline/anomalies
    (ledger) or graph hops (typology).

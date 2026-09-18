@@ -190,7 +190,7 @@ def parse_llm_response(content: str) -> dict[str, Any] | None:
     }
 
 
-SYSTEM_PROMPT = """You are Verity's Financial Crime Investigation Agent, assisting analyst Priya.
+SYSTEM_PROMPT = """You are Verity's Financial Crime Investigation Agent, assisting analyst Chitrita.
 Your role: Investigate flagged cases by selecting the appropriate tool at each step.
 You have access to EXACTLY these four tool names — respond with one of these
 five literal strings for "action" and never invent or rename a tool:

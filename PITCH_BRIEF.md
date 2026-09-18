@@ -18,7 +18,7 @@ flagged.**
 ## 2. The problem
 
 Mid-size digital banks and NBFCs (non-bank lenders) are too small to run separate fraud and
-anti-money-laundering (AML) teams. One analyst — the persona here is "Priya" — ends up
+anti-money-laundering (AML) teams. One analyst — the persona here is "Chitrita" — ends up
 swivel-chairing between a card-fraud dashboard and a separate AML/ledger review tool, with two
 different alert queues, two different mental models, and no single place to ask "why did the
 system flag this?" and get a trustworthy answer.
@@ -37,7 +37,7 @@ mid-size/digital-first lenders who can't staff that way.
 
 ## 3. How it works — user view (walk it like a demo)
 
-1. **Priya opens the workspace.** One screen. A masthead shows whether the four backend
+1. **Chitrita opens the workspace.** One screen. A masthead shows whether the four backend
    services are live ("Engines online (4/4)") — this is a real health check, not decoration.
 2. **She sees a case queue** mixing three kinds of alerts side by side: a card-fraud
    transaction, a bank-ledger anomaly, and a synthetic money-laundering network — filterable by
@@ -100,7 +100,7 @@ Four independent backend services plus one frontend, talking over plain HTTP/JSO
 | **Ledger Engine** | Parses a real bank's transaction history, flags balance drops / velocity spikes / suspicious reversals per account | Python, FastAPI, pandas |
 | **Typology Engine** | Detects money-laundering *patterns* (not single transactions) across a network of accounts — structuring, round-tripping, rapid layering — using formal FATF definitions | Python, FastAPI, NetworkX (graph algorithms) |
 | **Agent Core** | The "brain." Runs a step-by-step investigation loop, calls the three engines above as tools, and — critically — strips out any sentence in its final narrative that isn't backed by a real tool call | Python, FastAPI, no AI framework (deliberately hand-written) |
-| **Dashboard** | The UI Priya actually uses | TypeScript, React 19, TanStack Start (server-rendered React), Vite |
+| **Dashboard** | The UI Chitrita actually uses | TypeScript, React 19, TanStack Start (server-rendered React), Vite |
 
 **How they talk:** everything is plain REST/JSON over `localhost` ports 8000–8003 in
 development. The dashboard calls the Agent for investigations/chat, and calls the Ledger/
@@ -123,7 +123,7 @@ check.
   Python loop: ask the model what to do → run that one real tool → record it → repeat, up to 4
   steps. No LangChain, no AutoGen. That's a deliberate trade — less flexible, but every step is
   inspectable and debuggable, which matters a lot more than flexibility in a compliance context.
-- **Counterfactuals are real model re-runs, not guesses.** When Priya asks "what if the amount
+- **Counterfactuals are real model re-runs, not guesses.** When Chitrita asks "what if the amount
   were lower," the system doesn't ask an LLM to imagine the answer — it literally changes the
   number in the feature vector and re-runs the trained model, then reports the new score and
   which features moved.

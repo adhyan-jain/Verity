@@ -8,11 +8,11 @@
 
 ## 1. Executive Context: What is Verity & Why Does It Exist?
 
-### 1.1 The Persona: Priya's Single Desk
-Verity is built for **Priya**, a financial-crime analyst at a mid-size digital-first bank / NBFC.
-* **The Reality:** Unlike Tier-1 global institutions with separated silos, Priya's desk handles **both** transactional card fraud (high-velocity, point-in-time alerts) and AML account risk (running balance breaks, velocity spikes, and network laundering).
+### 1.1 The Persona: Chitrita's Single Desk
+Verity is built for **Chitrita**, a financial-crime analyst at a mid-size digital-first bank / NBFC.
+* **The Reality:** Unlike Tier-1 global institutions with separated silos, Chitrita's desk handles **both** transactional card fraud (high-velocity, point-in-time alerts) and AML account risk (running balance breaks, velocity spikes, and network laundering).
 * **The Pain Point:** Swivel-chairing between disjointed fraud dashboards and AML batch reports, dealing with alert fatigue, and suffering from opaque ML models or dangerous, hallucinated LLM summaries that cannot stand up in a regulatory compliance audit.
-* **Verity's Promise:** A unified investigation cockpit powered by two specialized detection engines and **one transparent, strictly grounded AI agent** that Priya can interrogate live.
+* **Verity's Promise:** A unified investigation cockpit powered by two specialized detection engines and **one transparent, strictly grounded AI agent** that Chitrita can interrogate live.
 
 ### 1.2 The 4-Person Division of Labor
 | Person | Role | Domain | Primary Artifacts |

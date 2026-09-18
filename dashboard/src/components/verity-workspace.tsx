@@ -245,13 +245,13 @@ function Masthead({ engines }: { engines: EngineStatus }) {
         </div>
         <div className="flex shrink-0 items-center gap-3">
           <div className="hidden text-right leading-tight sm:block">
-            <div className="text-xs font-semibold">Priya S.</div>
+            <div className="text-xs font-semibold">Chitrita S.</div>
             <div className="font-mono text-[9px] uppercase text-muted-foreground">
               Analyst · Tier 2
             </div>
           </div>
           <div className="grid size-9 place-items-center rounded-full bg-amber/20 font-mono text-xs font-medium text-amber shadow-soft">
-            PS
+            CS
           </div>
         </div>
       </div>

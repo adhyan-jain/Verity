@@ -8,7 +8,7 @@
 > from `git clone` to a running, tested stack.
 
 ## 🎯 Target Persona
-**Priya**, a financial-crime analyst at a mid-size digital-first bank / NBFC where one combined
+**Chitrita**, a financial-crime analyst at a mid-size digital-first bank / NBFC where one combined
 desk manages both transaction fraud alerts and account-level ledger investigations.
 
 ---

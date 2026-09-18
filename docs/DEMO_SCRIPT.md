@@ -4,7 +4,7 @@
 
 1. **Case Queue Overview**
    - Show unified alert inbox feeding from both Fraud and Ledger detection engines.
-   - Highlight Priya's workflow (one financial crime desk handling card fraud & account risk).
+   - Highlight Chitrita's workflow (one financial crime desk handling card fraud & account risk).
 
 2. **Fraud Detection & SHAP Explanation**
    - Open flagged card-fraud alert.

@@ -4,9 +4,9 @@ This is the locked spec. No more architecture debate — this document plus the 
 
 ## 0. One-liner and persona (resolved)
 
-**Persona:** Priya, a financial-crime analyst at a mid-size digital-first bank / NBFC. The bank is too small to run separate fraud and AML teams, so one combined "financial crime desk" handles both card-fraud alerts and account-risk investigation. This is the concrete, defensible answer to "who uses this" — state it as a named persona in the pitch, not as an abstract claim.
+**Persona:** Chitrita, a financial-crime analyst at a mid-size digital-first bank / NBFC. The bank is too small to run separate fraud and AML teams, so one combined "financial crime desk" handles both card-fraud alerts and account-risk investigation. This is the concrete, defensible answer to "who uses this" — state it as a named persona in the pitch, not as an abstract claim.
 
-**One-liner:** Verity is Priya's single workspace — two detection engines feeding one case queue, with an AI agent that investigates each flagged case and can be questioned about its own reasoning, live.
+**One-liner:** Verity is Chitrita's single workspace — two detection engines feeding one case queue, with an AI agent that investigates each flagged case and can be questioned about its own reasoning, live.
 
 ## 1. Repo structure
 
