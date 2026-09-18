@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-09-18T20:08:35Z",
+  "results": [
+    {
+      "model": "LightGBM",
+      "dataset": "creditcard",
+      "precision": 0.9524,
+      "recall": 0.9091,
+      "f1": 0.9302,
+      "pr_auc": 0.9697,
+      "threshold": 0.195,
+      "data_authenticity": "real"
+    },
+    {
+      "model": "RandomForest",
+      "dataset": "creditcard",
+      "precision": 0.9167,
+      "recall": 1.0,
+      "f1": 0.9565,
+      "pr_auc": 0.9847,
+      "threshold": 0.3101,
+      "data_authenticity": "real"
+    },
+    {
+      "model": "LightGBM",
+      "dataset": "kartik2112 (synthetic fallback)",
+      "precision": 0.9259,
+      "recall": 0.8197,
+      "f1": 0.8696,
+      "pr_auc": 0.9279,
+      "threshold": 0.919,
+      "data_authenticity": "synthetic_fallback"
+    },
+    {
+      "model": "RandomForest",
+      "dataset": "kartik2112 (synthetic fallback)",
+      "precision": 0.8548,
+      "recall": 0.8689,
+      "f1": 0.8618,
+      "pr_auc": 0.9257,
+      "threshold": 0.6189,
+      "data_authenticity": "synthetic_fallback"
+    },
+    {
+      "model": "FATF structuring detector",
+      "dataset": "independent adversarial set (n=11)",
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1": 0.8889,
+      "accuracy": 0.9091,
+      "data_authenticity": "synthetic (labeled adversarial cases)"
+    },
+    {
+      "model": "Grounding filter",
+      "dataset": "hallucination-injection probe",
+      "sentences_total": 3,
+      "sentences_retained": 2,
+      "hallucinations_blocked": 1,
+      "retention_rate": "66.7%",
+      "data_authenticity": "synthetic (deterministic probe)"
+    }
+  ],
+  "skipped": [
+    {
+      "model": "PaySim RandomForest",
+      "dataset": "PaySim CSV",
+      "reason": "raw dataset not found at /home/adhyan/Desktop/Vertis/data/Pay_sim/PS_20174392719_1491204439457_log.csv"
+    }
+  ]
+}
