@@ -34,10 +34,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Active investigation sessions and event streams
+# Active investigation sessions and real-time event streaming queues
 CASE_CACHE: Dict[str, Dict[str, Any]] = {}
 EVENT_QUEUES: Dict[str, List[Dict[str, Any]]] = {}
+ACTIVE_STREAM_QUEUES: Dict[str, asyncio.Queue] = {}
 llm_client = VerityLLMClient()
+
+
+def _sanitize_text_input(text: str) -> str:
+    """Sanitizes text inputs against prompt injection and delimiter evasion."""
+    if not text:
+        return ""
+    # Strip dangerous instruction override tokens
+    cleaned = re.sub(r"(?i)(ignore previous instructions|system override|<\|im_start\|>|<\|im_end\|>)", "[SANITIZED]", text)
+    return cleaned.strip()
 
 
 # -------------------------------------------------------------
@@ -75,7 +85,13 @@ def investigate_case(req: InvestigateRequest) -> Dict[str, Any]:
     """
     Triggers dynamic LLM investigation loop for a flagged case.
     Wraps execution with the latency guard watchdog.
+    Pushes events in real time to the case's active SSE queue.
     """
+    # Ensure active queue exists for live streaming
+    if req.case_id not in ACTIVE_STREAM_QUEUES:
+        ACTIVE_STREAM_QUEUES[req.case_id] = asyncio.Queue()
+    queue = ACTIVE_STREAM_QUEUES[req.case_id]
+
     def _run():
         if req.simulate_latency and req.simulate_latency > 0:
             time.sleep(req.simulate_latency)
@@ -84,16 +100,32 @@ def investigate_case(req: InvestigateRequest) -> Dict[str, Any]:
             if req.case_id not in EVENT_QUEUES:
                 EVENT_QUEUES[req.case_id] = []
             EVENT_QUEUES[req.case_id].append(event)
+            # Push live event to active consumer queue
+            try:
+                queue.put_nowait(event)
+            except Exception:
+                pass
 
-        case_data = run_investigation_loop(
-            case_id=req.case_id,
-            primary_transaction_id=req.transaction_id,
-            tier_origin=req.tier_origin,
-            on_step_callback=_step_callback,
-            llm_client=llm_client
-        )
-        CASE_CACHE[req.case_id] = case_data
-        return case_data
+        try:
+            case_data = run_investigation_loop(
+                case_id=req.case_id,
+                primary_transaction_id=req.transaction_id,
+                tier_origin=req.tier_origin,
+                on_step_callback=_step_callback,
+                llm_client=llm_client
+            )
+            CASE_CACHE[req.case_id] = case_data
+            try:
+                queue.put_nowait({"stream_status": "completed"})
+            except Exception:
+                pass
+            return case_data
+        except Exception as e:
+            try:
+                queue.put_nowait({"stream_status": "error", "error": str(e)})
+            except Exception:
+                pass
+            raise e
 
     # Wrap with 20-second latency guard watchdog
     result = execute_with_latency_guard(
@@ -108,23 +140,40 @@ def investigate_case(req: InvestigateRequest) -> Dict[str, Any]:
 async def get_trace_stream(case_id: str, request: Request, stream: bool = False):
     """
     Live trace streaming endpoint:
-    - If stream=True or Accept: text/event-stream: streams Server-Sent Events live.
+    - If stream=True or Accept: text/event-stream: consumes Server-Sent Events live from active queue.
     - Otherwise returns JSON array of AgentTraceEvents.
     """
     accept_header = request.headers.get("accept", "")
 
     if stream or "text/event-stream" in accept_header:
         async def event_generator():
-            # If case already has events, yield them
-            events = EVENT_QUEUES.get(case_id, [])
-            if not events and case_id in CASE_CACHE:
-                events = CASE_CACHE[case_id].get("trace_events", [])
+            # If case has already completed and cached, stream cached events
+            if case_id in CASE_CACHE and (case_id not in ACTIVE_STREAM_QUEUES or ACTIVE_STREAM_QUEUES[case_id].empty()):
+                for evt in CASE_CACHE[case_id].get("trace_events", []):
+                    yield f"data: {json.dumps(evt)}\n\n"
+                    await asyncio.sleep(0.01)
+                yield "data: {\"stream_status\": \"completed\"}\n\n"
+                return
 
-            for evt in events:
-                yield f"data: {json.dumps(evt)}\n\n"
-                await asyncio.sleep(0.05)
+            # Consume live from active producer/consumer queue
+            if case_id not in ACTIVE_STREAM_QUEUES:
+                ACTIVE_STREAM_QUEUES[case_id] = asyncio.Queue()
+            queue = ACTIVE_STREAM_QUEUES[case_id]
 
-            yield "data: {\"stream_status\": \"completed\"}\n\n"
+            while True:
+                try:
+                    evt = await asyncio.wait_for(queue.get(), timeout=5.0)
+                    if evt is None:
+                        break
+                    yield f"data: {json.dumps(evt)}\n\n"
+                    if isinstance(evt, dict) and evt.get("stream_status") in ("completed", "error"):
+                        break
+                except asyncio.TimeoutError:
+                    if case_id in CASE_CACHE:
+                        yield "data: {\"stream_status\": \"completed\"}\n\n"
+                        break
+                    # Keep-alive comment
+                    yield ": keepalive\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 

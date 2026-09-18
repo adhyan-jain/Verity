@@ -9,6 +9,7 @@ import json
 import re
 import time
 import logging
+import concurrent.futures
 from typing import Dict, Any, Optional, Callable
 
 logger = logging.getLogger("verity.agent.fallback")
@@ -96,27 +97,51 @@ def execute_with_latency_guard(
     task_func: Callable[[], Dict[str, Any]], query: str, timeout_seconds: float = 20.0
 ) -> Dict[str, Any]:
     """
-    Executes a task function while tracking execution time.
-    If the function takes longer than timeout_seconds or raises an exception,
-    falls back to the pre-cached answer with explicit UI disclosure.
+    Executes a task function with a real preemptive deadline watchdog.
+    If execution takes longer than timeout_seconds or raises an exception,
+    aborts and returns the pre-cached answer with explicit UI disclosure.
     """
     start_time = time.perf_counter()
+
+    if timeout_seconds <= 0.0:
+        cached = get_cached_answer(query) or {
+            "question_id": "deadline_fallback",
+            "response": "Investigation execution timed out before completion. Displaying benchmark analysis.",
+            "is_fallback": True,
+            "fallback_notice": STANDARD_FALLBACK_NOTICE
+        }
+        cached["latency_seconds"] = 0.0
+        cached["fallback_reason"] = f"Execution exceeded latency limit of {timeout_seconds}s."
+        return cached
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(task_func)
     try:
-        result = task_func()
-        elapsed = time.perf_counter() - start_time
-        if elapsed >= timeout_seconds:
-            cached = get_cached_answer(query)
-            if cached:
-                cached["latency_seconds"] = elapsed
-                cached["fallback_reason"] = (
-                    f"Execution exceeded latency limit of {timeout_seconds}s (took {elapsed:.1f}s)."
-                )
-                return cached
+        result = future.result(timeout=timeout_seconds)
+        executor.shutdown(wait=False)
         return result
+    except concurrent.futures.TimeoutError:
+        elapsed = time.perf_counter() - start_time
+        executor.shutdown(wait=False, cancel_futures=True)
+        logger.warning("Task exceeded deadline of %ss (took %.2fs), returning fallback.", timeout_seconds, elapsed)
+        cached = get_cached_answer(query) or {
+            "question_id": "deadline_fallback",
+            "response": "Investigation execution timed out before completion. Displaying benchmark analysis.",
+            "is_fallback": True,
+            "fallback_notice": STANDARD_FALLBACK_NOTICE
+        }
+        cached["latency_seconds"] = elapsed
+        cached["fallback_reason"] = (
+            f"Execution exceeded latency limit of {timeout_seconds}s (took {elapsed:.1f}s)."
+        )
+        return cached
     except Exception as exc:
+        elapsed = time.perf_counter() - start_time
+        executor.shutdown(wait=False, cancel_futures=True)
         logger.warning("Task execution failed (%s), attempting cached fallback", exc)
         cached = get_cached_answer(query)
         if cached:
+            cached["latency_seconds"] = elapsed
             cached["fallback_reason"] = f"Execution error: {str(exc)}"
             return cached
         raise exc

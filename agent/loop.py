@@ -8,9 +8,12 @@ and returns strictly grounded Case narratives.
 from typing import Dict, Any, List, Optional, Callable, Tuple
 import uuid
 import datetime
+import logging
 from .tools import get_transaction, get_shap_explanation, walk_graph, counterfactual
 from .grounding import ground_narrative
 from .llm import VerityLLMClient
+
+logger = logging.getLogger("verity.agent.loop")
 
 
 def _generate_event_id() -> str:
@@ -136,6 +139,7 @@ def run_investigation_loop(
     trace_events: List[Dict[str, Any]] = []
     case_risk_score = 0.85
     actual_tier = tier_origin
+    candidate_narrative: Optional[str] = None
 
     for step_num in range(1, max_steps + 1):
         # 1. LLM decides the next action
@@ -152,6 +156,7 @@ def run_investigation_loop(
         action_input = decision.get("action_input", {})
 
         if action == "finish":
+            candidate_narrative = decision.get("candidate_narrative")
             break
 
         # 2. Execute selected tool
@@ -236,16 +241,52 @@ def run_investigation_loop(
             if on_step_callback:
                 on_step_callback(evt)
 
-    # 3. Formulate Candidate Narrative from LLM
-    final_decision = client.decide_next_step(
-        case_id=case_id,
-        primary_tx_id=primary_transaction_id,
-        tier_origin=actual_tier,
-        history=trace_events,
-        step_number=len(trace_events) + 1,
-        max_steps=max_steps
-    )
-    candidate_narrative = final_decision.get("candidate_narrative")
+        elif action == "counterfactual":
+            tx_id = action_input.get("transaction_id", primary_transaction_id)
+            param_overrides = action_input.get("parameter_overrides") or action_input.get("modifications") or {}
+            cf_data = counterfactual(transaction_id=tx_id, parameter_overrides=param_overrides)
+            recalc_score = float(cf_data.get("recalculated_risk_score", 0.0))
+            orig_score = float(cf_data.get("original_risk_score", case_risk_score))
+            recalc_verdict = cf_data.get("recalculated_verdict", "clear")
+
+            summary = (
+                f"Counterfactual evaluation for {tx_id} with modifications {param_overrides}: "
+                f"risk score shifted from {orig_score:.2f} to {recalc_score:.2f} ({recalc_verdict})."
+            )
+            sentence = (
+                f"Counterfactual analysis for transaction {tx_id} demonstrates that modifying "
+                f"{list(param_overrides.keys()) or 'parameters'} shifts the risk score from {orig_score:.2f} to {recalc_score:.2f}."
+            )
+
+            evt = {
+                "event_id": _generate_event_id(),
+                "case_id": case_id,
+                "timestamp": _get_utc_timestamp(),
+                "tool_called": "counterfactual",
+                "tool_input": action_input,
+                "tool_output_summary": summary,
+                "narration_sentence": sentence,
+                "raw_output": cf_data
+            }
+            trace_events.append(evt)
+            if on_step_callback:
+                on_step_callback(evt)
+
+        else:
+            logger.warning("Unrecognized investigative action '%s', concluding loop.", action)
+            break
+
+    # 3. Formulate Candidate Narrative from LLM if not already provided
+    if candidate_narrative is None:
+        final_decision = client.decide_next_step(
+            case_id=case_id,
+            primary_tx_id=primary_transaction_id,
+            tier_origin=actual_tier,
+            history=trace_events,
+            step_number=len(trace_events) + 1,
+            max_steps=max_steps
+        )
+        candidate_narrative = final_decision.get("candidate_narrative")
 
     # 4. Strict Code-Level Grounding Filter
     grounded_narrative, verified_events = ground_narrative(trace_events, raw_narrative=candidate_narrative)

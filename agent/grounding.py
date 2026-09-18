@@ -72,6 +72,34 @@ def _extract_factual_entities(text: str) -> Dict[str, Set[str]]:
     }
 
 
+def find_supporting_event_id(sentence: str, trace_events: List[Dict[str, Any]]) -> Optional[str]:
+    """Finds the event_id in trace_events that directly supports the given sentence."""
+    s_norm = sentence.strip().lower().rstrip(".!?;:")
+    # 1. Exact match with an event narration sentence
+    for evt in trace_events:
+        evt_sent = evt.get("narration_sentence", "").strip().lower().rstrip(".!?;:")
+        if s_norm == evt_sent:
+            return evt.get("event_id")
+
+    # 2. Token overlap match
+    s_tokens = _extract_tokens(s_norm)
+    best_id = None
+    best_overlap = 0
+    for evt in trace_events:
+        evt_text = (
+            evt.get("narration_sentence", "") + " " +
+            evt.get("tool_output_summary", "") + " " +
+            str(evt.get("tool_input", {}))
+        ).lower()
+        evt_tokens = _extract_tokens(evt_text)
+        overlap = len(s_tokens & evt_tokens)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_id = evt.get("event_id")
+
+    return best_id or (trace_events[0].get("event_id") if trace_events else None)
+
+
 def is_sentence_strictly_grounded(
     candidate: str,
     approved_sentences: List[str],
@@ -79,20 +107,19 @@ def is_sentence_strictly_grounded(
 ) -> Tuple[bool, Optional[str]]:
     """
     Strict evidence-only grounding rule:
-    1. Direct match with an approved narration_sentence -> PASS
-    2. Explicit citation of valid event_id (e.g. [EVT-101]) with zero unsupported claims -> PASS
-    3. Factual containment check:
-       - Every ID (TX-..., ACC-...) must be in trace evidence.
-       - Every numeric figure / currency amount must be in trace evidence.
+    1. Exact normalized match with an approved narration_sentence -> PASS
+    2. Factual containment check:
+       - Every entity ID (TX-..., ACC-..., EVT-...) must be in trace evidence.
+       - Every numeric figure / currency amount must be strictly verified against trace evidence.
        - NO unbacked speculative terms (offshore, shell, cartel, etc.) unless explicitly present in trace evidence.
-       - Core informative words must be supported by the evidence corpus.
+       - Core informative terms must be supported by the evidence corpus.
     """
-    cand_norm = candidate.strip().lower()
+    cand_norm = candidate.strip().lower().rstrip(".!?;:")
 
-    # Rule 1: Exact or direct normalized match with an approved narration sentence
+    # Rule 1: Exact normalized match ONLY (no loose substring containment)
     for app in approved_sentences:
-        app_norm = app.strip().lower()
-        if cand_norm == app_norm or cand_norm in app_norm or app_norm in cand_norm:
+        app_norm = app.strip().lower().rstrip(".!?;:")
+        if cand_norm == app_norm:
             return True, None
 
     # Build the complete verified evidence corpus from all trace events
@@ -112,10 +139,11 @@ def is_sentence_strictly_grounded(
         if not any(ident in ev_id for ev_id in evidence_facts["ids"]) and ident not in evidence_corpus.lower():
             return False, f"Unsupported entity ID: '{ident}'"
 
-    # Check 2: Unsupported numbers or amounts
+    # Check 2: Unsupported numbers or amounts (normalized for commas/decimals)
+    evidence_corpus_clean = evidence_corpus.replace(",", "")
     for num in cand_facts["numbers"]:
-        # Skip trivial single digits (e.g. '1', '2' in list indices)
-        if len(num) > 1 and num not in evidence_corpus:
+        num_clean = num.replace(",", "")
+        if len(num_clean) > 1 and num_clean not in evidence_corpus_clean and num not in evidence_corpus:
             return False, f"Unsupported numeric value: '{num}'"
 
     # Check 3: Unsupported speculative terms (The Offshore Account Test)
@@ -197,11 +225,15 @@ def audit_grounding(trace_events: List[Dict[str, Any]], raw_narrative: str) -> D
     retained = []
     pruned = []
     rejection_reasons = {}
+    supporting_event_ids = {}
 
     for candidate in candidate_sentences:
         is_grounded, reason = is_sentence_strictly_grounded(candidate, approved_sentences, valid_events)
         if is_grounded:
             retained.append(candidate)
+            supp_id = find_supporting_event_id(candidate, valid_events)
+            if supp_id:
+                supporting_event_ids[candidate] = supp_id
         else:
             pruned.append(candidate)
             rejection_reasons[candidate] = reason or "Failed evidence verification"
@@ -213,5 +245,6 @@ def audit_grounding(trace_events: List[Dict[str, Any]], raw_narrative: str) -> D
         "retained_sentences": retained,
         "pruned_sentences": pruned,
         "rejection_reasons": rejection_reasons,
+        "supporting_event_ids": supporting_event_ids,
         "grounded_narrative": " ".join(retained) if retained else " ".join(approved_sentences)
     }
