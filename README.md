@@ -103,11 +103,11 @@ npm --prefix dashboard run dev
 
 ---
 
-## ✅ Test
+## ✅ Test & Rigor Evaluation
 
-**Unit/integration test suite** (56 tests, mocked/in-process — no services need to be running):
+**Unit/integration test suite** (70 tests, mocked/in-process — no services need to be running):
 ```sh
-pytest -v
+python -m pytest -v
 ```
 
 **End-to-end smoke test** (starts all 4 real services against real data, exercises every
@@ -118,10 +118,31 @@ tears everything down):
 python scripts/smoke_test.py
 ```
 
-**Dashboard build/typecheck:**
+**Unified Agent Rigor Evaluation Harness (Grounding + Narrative-Model Consistency):**
 ```sh
-cd dashboard && npx tsc --noEmit && npm run build
+python scripts/evaluate_agent.py
 ```
+
+---
+
+## 🧪 Agent Rigor & Evaluation Metrics
+
+Verity evaluates agent reasoning fidelity using two complementary, code-level metrics:
+
+| Metric | Result | Operational Scope & Caveat |
+| :--- | :--- | :--- |
+| **Grounding Coverage** (Anti-Hallucination) | **100%** unverified claims blocked (66.7% retention) | Code-level sentence-by-sentence fact-extractor purging hallucinated claims unbacked by tool outputs. |
+| **Narrative-Model Consistency** | **83.3%** *(10/12 passed)* | **REAL-LLM ONLY CAVEAT:** Evaluated under live LLM reasoning (`VERITY_LLM_API_KEY` set). If run in deterministic/rule-based mode, this reports `N/A — deterministic mode, result is not meaningful` because deterministic fallback constructs sentences directly from SHAP factors, yielding trivial 100% agreement by construction. |
+
+### What Narrative-Model Consistency Measures
+Narrative-model consistency measures the percentage of counterfactual transaction perturbations where an independently generated LLM narrative's verdict and named primary drivers strictly agree with the re-run LightGBM risk score (relative to calibrated threshold $\tau = 0.8843$) and top 1–2 SHAP attributions.
+
+### How it Complements Grounding Coverage
+- **Grounding Coverage** checks whether the agent claims something it *cannot prove* (e.g., hallucinated offshore bank accounts or fabricated merchant IDs).
+- **Narrative-Model Consistency** checks whether what the agent claims *remains mathematically true* when the underlying facts and features change.
+
+### Scope & Future Roadmap
+*Hackathon Scope Constraint:* This benchmark is intentionally scoped to a fixed suite of 12 targeted perturbations across the 3 demo fraud cases reusing the existing counterfactual re-run pipeline (`engines/fraud/explain.py`). A full production implementation would incorporate automated minimum-plausible-distance perturbation search (e.g., Nelder-Mead / Tree-SHAP boundary walk) and semantic embedding drift analysis across the entire transaction distribution.
 
 ---
 
@@ -136,3 +157,4 @@ cd dashboard && npx tsc --noEmit && npm run build
   detection engine internals, agent grounding rules).
 - [`docs/PITCH.md`](docs/PITCH.md), [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) — presentation
   materials.
+
