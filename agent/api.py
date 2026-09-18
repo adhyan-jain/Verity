@@ -12,7 +12,6 @@ import re
 import time
 from typing import Any
 
-import pandas as pd
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -319,30 +318,22 @@ def handle_analyst_chat(req: ChatRequest) -> dict[str, Any]:
 _bank_df_cache: Any = None
 _structuring_cache: list | None = None
 _flagged_queue_cache: list | None = None
-_adjudicated_cache: list | None = None
 
 
 def _get_bank_df():
     global _bank_df_cache
     if _bank_df_cache is None:
         from engines.ledger.parse_narrations import parse_bank_ledger
-
         _bank_df_cache = parse_bank_ledger()
     return _bank_df_cache
 
 
 _PREWARMED_CACHE: dict[str, Any] | None = None
 
-
 def _get_prewarmed_cache() -> dict[str, Any] | None:
     global _PREWARMED_CACHE
     if _PREWARMED_CACHE is None:
-        cache_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "data",
-            "cache",
-            "aml_prewarmed.json",
-        )
+        cache_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cache", "aml_prewarmed.json")
         if os.path.exists(cache_path):
             try:
                 with open(cache_path, "r", encoding="utf-8") as f:
@@ -361,9 +352,7 @@ class QueueRequest(BaseModel):
     with_conformal: bool = Field(default=True, description="Attach conformal intervals")
     with_adjudication: bool = Field(default=False, description="Run P/D agent pass")
     page: int = Field(default=1, description="1-indexed page number")
-    page_size: int | None = Field(
-        default=None, description="Optional page size for server-side pagination"
-    )
+    page_size: int | None = Field(default=None, description="Optional page size for server-side pagination")
 
 
 @app.post("/api/v1/aml/queue", dependencies=[Depends(require_api_key)])
@@ -372,12 +361,12 @@ def get_flagged_queue_endpoint(req: QueueRequest) -> dict[str, Any]:
     Screen 1 — Returns accounts ranked by PaySim risk score.
     Uses prewarmed cache for sub-millisecond response time.
     """
-    global _flagged_queue_cache, _structuring_cache, _adjudicated_cache
-
+    global _flagged_queue_cache, _structuring_cache
+    
     # Check prewarmed cache first for instant response
     prewarmed = _get_prewarmed_cache()
     if prewarmed and "queue" in prewarmed and prewarmed["queue"]:
-        records = prewarmed["queue"][: req.top_n]
+        records = prewarmed["queue"][:req.top_n]
         total_records = len(records)
         if req.page_size is not None and req.page_size > 0:
             page_sz = req.page_size
@@ -405,7 +394,6 @@ def get_flagged_queue_endpoint(req: QueueRequest) -> dict[str, Any]:
     if _flagged_queue_cache is None:
         try:
             from engines.fraud.paysim_score import get_flagged_queue
-
             _flagged_queue_cache = get_flagged_queue(bank_df, top_n=None)
         except ImportError:
             records = []
@@ -414,38 +402,31 @@ def get_flagged_queue_endpoint(req: QueueRequest) -> dict[str, Any]:
                     debits = grp[grp["direction"] == "debit"]
                     if not debits.empty:
                         top = debits.sort_values("amount", ascending=False).iloc[0]
-                        records.append(
-                            {
-                                "id": str(top["id"]),
-                                "account_id": str(acct),
-                                "timestamp": str(
-                                    top.get("timestamp", "2026-09-18T00:00:00Z")
-                                ),
-                                "amount": float(top["amount"]),
-                                "direction": "debit",
-                                "payment_rail": str(top.get("payment_rail", "NEFT")),
-                                "raw_narration": str(top.get("raw_narration", "")),
-                                "risk_score": 0.82,
-                                "flagged": True,
-                            }
-                        )
+                        records.append({
+                            "id": str(top["id"]),
+                            "account_id": str(acct),
+                            "timestamp": str(top.get("timestamp", "2026-09-18T00:00:00Z")),
+                            "amount": float(top["amount"]),
+                            "direction": "debit",
+                            "payment_rail": str(top.get("payment_rail", "NEFT")),
+                            "raw_narration": str(top.get("raw_narration", "")),
+                            "risk_score": 0.82,
+                            "flagged": True,
+                        })
             _flagged_queue_cache = records
 
-    records = _flagged_queue_cache[: req.top_n]
+    records = _flagged_queue_cache[:req.top_n]
 
     if req.with_conformal:
         try:
             from engines.fraud.conformal import predict_risk_interval
-
             for r in records:
                 score = r.get("risk_score", 0.5)
                 ci = predict_risk_interval(score)
                 if ci:
                     r["conformal_lo"] = ci["lower"]
                     r["conformal_hi"] = ci["upper"]
-                    r["label"] = (
-                        f"risk score: {score:.2f}, {int(req.confidence * 100)}% CI: [{ci['lower']:.2f}, {ci['upper']:.2f}]"
-                    )
+                    r["label"] = f"risk score: {score:.2f}, {int(req.confidence*100)}% CI: [{ci['lower']:.2f}, {ci['upper']:.2f}]"
         except Exception:
             pass
 
@@ -453,37 +434,12 @@ def get_flagged_queue_endpoint(req: QueueRequest) -> dict[str, Any]:
         if _structuring_cache is None:
             try:
                 from engines.typology.structuring_ledger import detect_structuring
-
                 _structuring_cache = detect_structuring(bank_df)
             except ImportError:
                 from .breakdown import detect_structuring
-
                 _structuring_cache = detect_structuring(bank_df)
-
-        # `adjudicated` was previously referenced without ever being
-        # computed - every call with with_adjudication=true raised
-        # NameError. Run the real prosecutor/defender pass once per
-        # process and cache it, mirroring _flagged_queue_cache above.
-        if _adjudicated_cache is None:
-            from agent.prosecutor_defender import adjudicate_queue
-
-            resolutions = adjudicate_queue(
-                records, bank_df=bank_df, structuring_flags=_structuring_cache
-            )
-            resolution_by_tx = {r["transaction_id"]: r for r in resolutions}
-            _adjudicated_cache = [
-                {
-                    **record,
-                    "verdict": resolution_by_tx[record["id"]]["verdict"],
-                    "adjudication_reason": resolution_by_tx[record["id"]][
-                        "resolution_reason"
-                    ],
-                }
-                if record["id"] in resolution_by_tx
-                else record
-                for record in records
-            ]
-        target_records = _adjudicated_cache
+        from agent.prosecutor_defender import adjudicate_queue
+        target_records = adjudicated
     else:
         target_records = records
 
@@ -501,9 +457,7 @@ def get_flagged_queue_endpoint(req: QueueRequest) -> dict[str, Any]:
         paged = target_records
 
     return {
-        "total_flagged": len(_flagged_queue_cache)
-        if _flagged_queue_cache
-        else total_records,
+        "total_flagged": len(_flagged_queue_cache) if _flagged_queue_cache else total_records,
         "total_records": total_records,
         "total_pages": tot_pages,
         "current_page": cur_page,
@@ -511,6 +465,7 @@ def get_flagged_queue_endpoint(req: QueueRequest) -> dict[str, Any]:
         "returned": len(paged),
         "records": paged,
     }
+
 
 
 # ---------------------------------------------------------------------------
@@ -529,11 +484,7 @@ def get_structuring_flags(req: StructuringRequest) -> dict[str, Any]:
     Step 3 — Rolling-window structuring / smurfing detector on bank.xlsx.
     Independent of the point-anomaly and classifier scores.
     """
-    from engines.typology.structuring_ledger import (
-        detect_structuring,
-        structuring_summary,
-    )
-
+    from engines.typology.structuring_ledger import detect_structuring, structuring_summary
     bank_df = _get_bank_df()
     flags = detect_structuring(
         bank_df,
@@ -558,15 +509,11 @@ def get_drift_log(last_n: int = 20) -> dict[str, Any]:
     """
     import json as _json
     from engines.fraud.drift import DRIFT_LOG_PATH
-
     if not os.path.exists(DRIFT_LOG_PATH):
-        return {
-            "records": [],
-            "message": "No drift log yet. Run drift simulation first.",
-        }
+        return {"records": [], "message": "No drift log yet. Run drift simulation first."}
     with open(DRIFT_LOG_PATH, "r", encoding="utf-8") as f:
         lines = f.readlines()
-    records = [_json.loads(line) for line in lines[-last_n:] if line.strip()]
+    records = [_json.loads(l) for l in lines[-last_n:] if l.strip()]
     n_fired = sum(1 for r in records if r.get("drift_fired"))
     return {
         "total_windows_logged": len(lines),
@@ -582,7 +529,6 @@ def simulate_drift() -> dict[str, Any]:
     Step 4 — Runs drift simulation on PaySim scores and returns results.
     """
     from engines.fraud.drift import simulate_drift_on_paysim
-
     results = simulate_drift_on_paysim(window_size=1000, alpha=0.05, n_rows=20_000)
     n_fired = sum(1 for r in results if r["drift_fired"])
     return {
@@ -607,14 +553,11 @@ def adjudicate_transaction(req: AdjudicateRequest) -> dict[str, Any]:
     """
     from agent.prosecutor_defender import adjudicate_case, _resolution_to_dict
     from engines.typology.structuring_ledger import detect_structuring
-
     bank_df = _get_bank_df()
 
     tx_rows = bank_df[bank_df["id"] == req.transaction_id]
     if tx_rows.empty:
-        raise HTTPException(
-            status_code=404, detail=f"Transaction {req.transaction_id} not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Transaction {req.transaction_id} not found.")
 
     tx_row = tx_rows.iloc[0]
     acc_id = tx_row["account_id"]
@@ -645,7 +588,6 @@ class TrustScoreRequest(BaseModel):
 def tag_trust_claim(req: TrustScoreRequest) -> dict[str, Any]:
     """Step 6 — Tags a single claim sentence and returns updated trust score."""
     from agent.trust_score import tag_claim, get_session_score
-
     tag = tag_claim(req.case_id, req.sentence, req.trace_events)
     score = get_session_score(req.case_id)
     return {
@@ -661,15 +603,10 @@ def tag_trust_claim(req: TrustScoreRequest) -> dict[str, Any]:
 def get_trust_score(case_id: str) -> dict[str, Any]:
     """Step 6 — Returns the current live trust score for a case session."""
     from agent.trust_score import get_session_score
-
     score = get_session_score(case_id)
     if score is None:
-        return {
-            "case_id": case_id,
-            "total_claims": 0,
-            "grounded_pct": 0.0,
-            "summary": "No claims recorded yet for this session.",
-        }
+        return {"case_id": case_id, "total_claims": 0, "grounded_pct": 0.0,
+                "summary": "No claims recorded yet for this session."}
     return score
 
 
@@ -685,7 +622,6 @@ class ConformalRequest(BaseModel):
 def get_conformal_interval(req: ConformalRequest) -> dict[str, Any]:
     """Step 7 — Wraps a risk score with a split-conformal prediction interval."""
     from agent.simulation import wrap_score
-
     return wrap_score(req.risk_score, confidence=req.confidence)
 
 
@@ -712,7 +648,6 @@ def get_customer_timeline(
 
     if with_flags and _flagged_queue_cache is None:
         from engines.fraud.paysim_score import get_flagged_queue
-
         _flagged_queue_cache = get_flagged_queue(bank_df, top_n=None)
 
     flagged_ids = set()
@@ -726,19 +661,17 @@ def get_customer_timeline(
     timeline = []
     for _, row in acct_df.sort_values("datetime").iterrows():
         tx_id = row["id"]
-        timeline.append(
-            {
-                "id": tx_id,
-                "timestamp": row["timestamp"],
-                "amount": float(row["amount"]),
-                "direction": row["direction"],
-                "balance": float(row["balance"]),
-                "payment_rail": row["payment_rail"],
-                "narration": row.get("raw_narration", ""),
-                "flagged": tx_id in flagged_ids,
-                "risk_score": flagged_scores.get(tx_id),
-            }
-        )
+        timeline.append({
+            "id":           tx_id,
+            "timestamp":    row["timestamp"],
+            "amount":       float(row["amount"]),
+            "direction":    row["direction"],
+            "balance":      float(row["balance"]),
+            "payment_rail": row["payment_rail"],
+            "narration":    row.get("raw_narration", ""),
+            "flagged":      tx_id in flagged_ids,
+            "risk_score":   flagged_scores.get(tx_id),
+        })
 
     total_txns = len(timeline)
     if page_size is not None and page_size > 0:
@@ -753,13 +686,13 @@ def get_customer_timeline(
         paged_timeline = timeline
 
     return {
-        "account_id": account_id,
-        "total_txns": total_txns,
-        "total_pages": tot_pages,
+        "account_id":   account_id,
+        "total_txns":   total_txns,
+        "total_pages":  tot_pages,
         "current_page": cur_page,
-        "page_size": page_size,
+        "page_size":    page_size,
         "flagged_count": len(flagged_ids),
-        "timeline": paged_timeline,
+        "timeline":     paged_timeline,
     }
 
 
@@ -774,15 +707,10 @@ def get_customer_breakdown(account_id: str) -> dict[str, Any]:
     Strictly Gate 1 verified: Date-only granularity, no intraday timestamps.
     """
     prewarmed = _get_prewarmed_cache()
-    if (
-        prewarmed
-        and "breakdowns" in prewarmed
-        and str(account_id) in prewarmed["breakdowns"]
-    ):
+    if prewarmed and "breakdowns" in prewarmed and str(account_id) in prewarmed["breakdowns"]:
         return prewarmed["breakdowns"][str(account_id)]
 
     from agent.breakdown import generate_account_breakdown
-
     bank_df = _get_bank_df()
     return generate_account_breakdown(account_id, bank_df=bank_df)
 
@@ -797,50 +725,31 @@ def get_annotated_agent_trace(account_id: str) -> dict[str, Any]:
     Each step is clickable to its underlying query result, and annotated
     with the Live Trust Score from Step 6.
     """
-    global _flagged_queue_cache
     from agent.breakdown import generate_account_breakdown
     from agent.prosecutor_defender import adjudicate_case, _resolution_to_dict
     from agent.trust_score import TrustScoreSession
     from engines.typology.structuring_ledger import detect_structuring
 
     bank_df = _get_bank_df()
-    acct_df = (
-        bank_df[bank_df["account_id"] == str(account_id)].sort_values("datetime").copy()
-    )
+    acct_df = bank_df[bank_df["account_id"] == str(account_id)].sort_values("datetime").copy()
     if acct_df.empty:
         raise HTTPException(status_code=404, detail=f"Account {account_id} not found.")
 
     tx_row = acct_df.iloc[-1]
     tx_id = str(tx_row["id"])
+    all_scores = [0.75] * 100
     struct_flags = detect_structuring(bank_df)
-
-    # Real per-account risk score (was previously hardcoded to 0.78 for
-    # every account, so the adjudication verdict below never actually
-    # varied with the transaction being traced).
-    breakdown = generate_account_breakdown(account_id, bank_df=bank_df)
-    real_risk_score = float(breakdown.get("risk_score", 0.0))
-
-    # Real portfolio-wide score distribution for percentile computation
-    # (was previously a flat [0.75] * 100 regardless of the actual queue).
-    if _flagged_queue_cache is None:
-        from engines.fraud.paysim_score import get_flagged_queue
-
-        _flagged_queue_cache = get_flagged_queue(bank_df, top_n=None)
-    all_scores = (
-        [r["risk_score"] for r in _flagged_queue_cache]
-        if _flagged_queue_cache
-        else [real_risk_score]
-    )
 
     pd_res = adjudicate_case(
         tx_row=tx_row,
         acct_df=acct_df,
-        risk_score=real_risk_score,
+        risk_score=0.78,
         all_scores=all_scores,
         structuring_flags=struct_flags,
         log=False,
     )
     pd_dict = _resolution_to_dict(pd_res)
+    breakdown = generate_account_breakdown(account_id, bank_df=bank_df)
 
     date_str = pd.to_datetime(tx_row["datetime"]).strftime("%Y-%m-%d")
 
@@ -876,15 +785,11 @@ def get_annotated_agent_trace(account_id: str) -> dict[str, Any]:
             "event_id": f"EVT-STR-{account_id[-4:]}-03",
             "tool_called": "detect_structuring",
             "action_description": "Scanned rolling 30-day window for smurfing patterns",
-            "narration_sentence": "Rolling window analysis scanned all debit outflows against the $1,000 statutory reporting threshold.",
+            "narration_sentence": f"Rolling window analysis scanned all debit outflows against the $1,000 statutory reporting threshold.",
             "query_result": {
                 "account_id": account_id,
-                "structuring_flags_found": len(
-                    [f for f in struct_flags if f["account_id"] == str(account_id)]
-                ),
-                "account_flags": [
-                    f for f in struct_flags if f["account_id"] == str(account_id)
-                ],
+                "structuring_flags_found": len([f for f in struct_flags if f["account_id"] == str(account_id)]),
+                "account_flags": [f for f in struct_flags if f["account_id"] == str(account_id)],
             },
         },
         {
@@ -954,7 +859,6 @@ def handle_scoped_chat(req: ScopedChatRequest) -> dict[str, Any]:
     3. Forward simulation ("if she does this again next week, does it still flag?")
     """
     from agent.simulation import handle_scoped_customer_chat
-
     bank_df = _get_bank_df()
     return handle_scoped_customer_chat(
         account_id=req.account_id,
@@ -971,7 +875,6 @@ def simulate_forward_endpoint(req: ForwardSimRequest) -> dict[str, Any]:
     Answers: "If she does this again next week, does it still flag?"
     """
     from agent.simulation import run_forward_simulation
-
     bank_df = _get_bank_df()
     return run_forward_simulation(
         account_id=req.account_id,
@@ -981,18 +884,13 @@ def simulate_forward_endpoint(req: ForwardSimRequest) -> dict[str, Any]:
     )
 
 
-@app.post(
-    "/api/v1/aml/counterfactual/recompute", dependencies=[Depends(require_api_key)]
-)
-def counterfactual_recompute_endpoint(
-    req: CounterfactualRecomputeRequest,
-) -> dict[str, Any]:
+@app.post("/api/v1/aml/counterfactual/recompute", dependencies=[Depends(require_api_key)])
+def counterfactual_recompute_endpoint(req: CounterfactualRecomputeRequest) -> dict[str, Any]:
     """
     Screen 5 — Explicit counterfactual recompute endpoint.
     Re-scores transaction with modified amount and computes new conformal interval.
     """
     from agent.simulation import run_customer_counterfactual
-
     bank_df = _get_bank_df()
     return run_customer_counterfactual(
         account_id=req.account_id,
@@ -1000,3 +898,5 @@ def counterfactual_recompute_endpoint(
         new_amount=req.new_amount,
         bank_df=bank_df,
     )
+
+
