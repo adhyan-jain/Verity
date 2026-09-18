@@ -18,14 +18,16 @@ FIXTURES_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "contracts",
     "mock_data",
-    "mock_fallback_qa.json"
+    "mock_fallback_qa.json",
 )
 
 # Standard fallback notice required by Verity's honesty principle
 STANDARD_FALLBACK_NOTICE = "Using a prepared benchmark answer for this query."
 
 
-def get_cached_answer(query: str, fixtures_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def get_cached_answer(
+    query: str, fixtures_path: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
     """
     Looks up pre-cached responses for key judge questions:
     - Q1: why was this flagged / explain alert
@@ -45,7 +47,7 @@ def get_cached_answer(query: str, fixtures_path: Optional[str] = None) -> Option
             qa_items = json.load(f)
 
         query_clean = query.lower().strip()
-        query_tokens = set(re.findall(r'[a-zA-Z0-9]+', query_clean))
+        query_tokens = set(re.findall(r"[a-zA-Z0-9]+", query_clean))
 
         # Flatten all patterns with their corresponding item, sorted by pattern length descending
         pattern_candidates = []
@@ -63,19 +65,25 @@ def get_cached_answer(query: str, fixtures_path: Optional[str] = None) -> Option
                     "question_id": item.get("question_id", "cached_q"),
                     "response": item["response"],
                     "is_fallback": True,
-                    "fallback_notice": item.get("fallback_notice", STANDARD_FALLBACK_NOTICE)
+                    "fallback_notice": item.get(
+                        "fallback_notice", STANDARD_FALLBACK_NOTICE
+                    ),
                 }
 
         # Pass 2: Token subset match (longest token set first)
-        pattern_candidates.sort(key=lambda x: len(re.findall(r'[a-zA-Z0-9]+', x[0])), reverse=True)
+        pattern_candidates.sort(
+            key=lambda x: len(re.findall(r"[a-zA-Z0-9]+", x[0])), reverse=True
+        )
         for pattern_clean, item in pattern_candidates:
-            p_tokens = set(re.findall(r'[a-zA-Z0-9]+', pattern_clean))
+            p_tokens = set(re.findall(r"[a-zA-Z0-9]+", pattern_clean))
             if len(p_tokens) >= 2 and p_tokens.issubset(query_tokens):
                 return {
                     "question_id": item.get("question_id", "cached_q"),
                     "response": item["response"],
                     "is_fallback": True,
-                    "fallback_notice": item.get("fallback_notice", STANDARD_FALLBACK_NOTICE)
+                    "fallback_notice": item.get(
+                        "fallback_notice", STANDARD_FALLBACK_NOTICE
+                    ),
                 }
 
     except Exception as e:
@@ -85,9 +93,7 @@ def get_cached_answer(query: str, fixtures_path: Optional[str] = None) -> Option
 
 
 def execute_with_latency_guard(
-    task_func: Callable[[], Dict[str, Any]],
-    query: str,
-    timeout_seconds: float = 20.0
+    task_func: Callable[[], Dict[str, Any]], query: str, timeout_seconds: float = 20.0
 ) -> Dict[str, Any]:
     """
     Executes a task function while tracking execution time.
@@ -102,7 +108,9 @@ def execute_with_latency_guard(
             cached = get_cached_answer(query)
             if cached:
                 cached["latency_seconds"] = elapsed
-                cached["fallback_reason"] = f"Execution exceeded latency limit of {timeout_seconds}s (took {elapsed:.1f}s)."
+                cached["fallback_reason"] = (
+                    f"Execution exceeded latency limit of {timeout_seconds}s (took {elapsed:.1f}s)."
+                )
                 return cached
         return result
     except Exception as exc:

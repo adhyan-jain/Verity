@@ -3,7 +3,6 @@ Narration Parser for Bank Ledger Data.
 Person B: Parses raw narration strings from bank.xlsx to extract counterparty and payment modes.
 """
 
-from typing import Dict, Any, List
 import pandas as pd
 
 

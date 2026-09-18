@@ -18,19 +18,29 @@ def _split_into_sentences(text: str) -> List[str]:
 
     # Replace periods in common currency/decimal formats with a placeholder
     # e.g., $4,850.00 -> $4,850<DOT>00
-    cleaned = re.sub(r'(\$\d[\d,]*)\.(\d+)', r'\1<DOT>\2', text)
-    cleaned = re.sub(r'(\b\d+)\.(\d+)\b', r'\1<DOT>\2', cleaned)
+    cleaned = re.sub(r"(\$\d[\d,]*)\.(\d+)", r"\1<DOT>\2", text)
+    cleaned = re.sub(r"(\b\d+)\.(\d+)\b", r"\1<DOT>\2", cleaned)
     # Protect common abbreviations
-    cleaned = re.sub(r'\b(e\.g\.|i\.e\.|vs\.|approx\.|dr\.|mr\.)', lambda m: m.group(1).replace('.', '<DOT>'), cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"\b(e\.g\.|i\.e\.|vs\.|approx\.|dr\.|mr\.)",
+        lambda m: m.group(1).replace(".", "<DOT>"),
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     # Protect AM/PM periods
-    cleaned = re.sub(r'\b(A\.M\.|P\.M\.)', lambda m: m.group(1).replace('.', '<DOT>'), cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"\b(A\.M\.|P\.M\.)",
+        lambda m: m.group(1).replace(".", "<DOT>"),
+        cleaned,
+        flags=re.IGNORECASE,
+    )
 
     # Split on sentence terminals (. ! ?) followed by whitespace or end of string
-    raw_sentences = re.split(r'(?<=[.!?])\s+', cleaned)
+    raw_sentences = re.split(r"(?<=[.!?])\s+", cleaned)
 
     sentences = []
     for s in raw_sentences:
-        restored = s.replace('<DOT>', '.').strip()
+        restored = s.replace("<DOT>", ".").strip()
         if restored:
             sentences.append(restored)
 
@@ -39,10 +49,12 @@ def _split_into_sentences(text: str) -> List[str]:
 
 def _normalize_tokens(text: str) -> set:
     """Extracts lowercase alpha-numeric tokens for similarity comparison."""
-    return set(re.findall(r'[a-zA-Z0-9_\-]+', text.lower()))
+    return set(re.findall(r"[a-zA-Z0-9_\-]+", text.lower()))
 
 
-def is_sentence_grounded(candidate: str, approved_sentences: List[str], trace_events: List[Dict[str, Any]]) -> bool:
+def is_sentence_grounded(
+    candidate: str, approved_sentences: List[str], trace_events: List[Dict[str, Any]]
+) -> bool:
     """
     Determines if a candidate sentence is strictly grounded in the approved trace events:
     1. Direct match with an approved narration_sentence.
@@ -66,7 +78,26 @@ def is_sentence_grounded(candidate: str, approved_sentences: List[str], trace_ev
     # 3. Informative token containment check
     candidate_tokens = _normalize_tokens(candidate)
     # Remove common stop words
-    stopwords = {"the", "a", "an", "is", "was", "were", "and", "or", "to", "for", "in", "on", "at", "of", "by", "this", "that", "it"}
+    stopwords = {
+        "the",
+        "a",
+        "an",
+        "is",
+        "was",
+        "were",
+        "and",
+        "or",
+        "to",
+        "for",
+        "in",
+        "on",
+        "at",
+        "of",
+        "by",
+        "this",
+        "that",
+        "it",
+    }
     informative_tokens = candidate_tokens - stopwords
 
     if not informative_tokens:
@@ -87,8 +118,7 @@ def is_sentence_grounded(candidate: str, approved_sentences: List[str], trace_ev
 
 
 def ground_narrative(
-    trace_events: List[Dict[str, Any]], 
-    raw_narrative: Optional[str] = None
+    trace_events: List[Dict[str, Any]], raw_narrative: Optional[str] = None
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Grounding rule: The agent's narrative field can ONLY be assembled from
@@ -100,7 +130,9 @@ def ground_narrative(
     - If all candidate sentences are dropped, falls back to trace_events narration_sentences.
     """
     # 1. Collect verified narration sentences from valid trace events
-    valid_events = [e for e in trace_events if e.get("event_id") and e.get("narration_sentence")]
+    valid_events = [
+        e for e in trace_events if e.get("event_id") and e.get("narration_sentence")
+    ]
     approved_sentences = [e["narration_sentence"].strip() for e in valid_events]
 
     # 2. If no raw narrative was provided, perform deterministic assembly
@@ -125,11 +157,15 @@ def ground_narrative(
     return grounded_narrative, valid_events
 
 
-def audit_grounding(trace_events: List[Dict[str, Any]], raw_narrative: str) -> Dict[str, Any]:
+def audit_grounding(
+    trace_events: List[Dict[str, Any]], raw_narrative: str
+) -> Dict[str, Any]:
     """
     Audit tool for verifying grounding filter behavior and tracking dropped sentences.
     """
-    valid_events = [e for e in trace_events if e.get("event_id") and e.get("narration_sentence")]
+    valid_events = [
+        e for e in trace_events if e.get("event_id") and e.get("narration_sentence")
+    ]
     approved_sentences = [e["narration_sentence"].strip() for e in valid_events]
     candidate_sentences = _split_into_sentences(raw_narrative)
 
@@ -148,5 +184,7 @@ def audit_grounding(trace_events: List[Dict[str, Any]], raw_narrative: str) -> D
         "pruned_count": len(pruned),
         "retained_sentences": retained,
         "pruned_sentences": pruned,
-        "grounded_narrative": " ".join(retained) if retained else " ".join(approved_sentences)
+        "grounded_narrative": " ".join(retained)
+        if retained
+        else " ".join(approved_sentences),
     }

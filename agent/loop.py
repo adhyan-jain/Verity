@@ -7,7 +7,7 @@ Dispatches model tool calls, appends AgentTraceEvents, and returns grounded Case
 from typing import Dict, Any, List, Optional, Callable
 import uuid
 import datetime
-from .tools import get_transaction, get_shap_explanation, walk_graph, counterfactual
+from .tools import get_transaction, get_shap_explanation, walk_graph
 from .grounding import ground_narrative
 
 
@@ -22,10 +22,10 @@ def _get_utc_timestamp() -> str:
 
 
 def run_investigation_loop(
-    case_id: str, 
-    primary_transaction_id: str, 
+    case_id: str,
+    primary_transaction_id: str,
     tier_origin: str = "real_card",
-    on_step_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    on_step_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     """
     Executes investigative loop for a flagged case across all three tiers:
@@ -60,7 +60,7 @@ def run_investigation_loop(
         "tool_called": "get_transaction",
         "tool_input": {"transaction_id": primary_transaction_id},
         "tool_output_summary": step1_summary,
-        "narration_sentence": step1_sentence
+        "narration_sentence": step1_sentence,
     }
     trace_events.append(evt1)
     if on_step_callback:
@@ -80,8 +80,24 @@ def run_investigation_loop(
         interpretable_factors = [f for f in top_factors if f.get("interpretable")]
         anonymized_factors = [f for f in top_factors if not f.get("interpretable")]
 
-        interp_desc = ", ".join([f"{f['feature']} ({f['contribution']:+.2f})" for f in interpretable_factors]) or "Amount"
-        anon_desc = ", ".join([f"{f['feature']} ({f['contribution']:+.2f})" for f in anonymized_factors]) or "V14"
+        interp_desc = (
+            ", ".join(
+                [
+                    f"{f['feature']} ({f['contribution']:+.2f})"
+                    for f in interpretable_factors
+                ]
+            )
+            or "Amount"
+        )
+        anon_desc = (
+            ", ".join(
+                [
+                    f"{f['feature']} ({f['contribution']:+.2f})"
+                    for f in anonymized_factors
+                ]
+            )
+            or "V14"
+        )
 
         step2_summary = (
             f"SHAP model returned risk score {risk_score:.2f} ({shap_data.get('verdict', 'flagged')}). "
@@ -99,7 +115,7 @@ def run_investigation_loop(
             "tool_called": "get_shap_explanation",
             "tool_input": {"transaction_id": primary_transaction_id},
             "tool_output_summary": step2_summary,
-            "narration_sentence": step2_sentence
+            "narration_sentence": step2_sentence,
         }
         trace_events.append(evt2)
         if on_step_callback:
@@ -129,7 +145,7 @@ def run_investigation_loop(
             "tool_called": "walk_graph",
             "tool_input": {"account_id": account_id, "tier": "real_ledger"},
             "tool_output_summary": step2_summary,
-            "narration_sentence": step2_sentence
+            "narration_sentence": step2_sentence,
         }
         trace_events.append(evt2)
         if on_step_callback:
@@ -138,7 +154,9 @@ def run_investigation_loop(
     elif actual_tier == "synthetic_network":
         # Synthetic FATF Typology Deep Dive via Graph Walk
         account_id = tx_data.get("account_id") or "ACC-SYN-401"
-        walk_result = walk_graph(account_id=account_id, tier="synthetic_network", depth=3)
+        walk_result = walk_graph(
+            account_id=account_id, tier="synthetic_network", depth=3
+        )
         steps = walk_result.get("steps", [])
         risk_score = 0.94
 
@@ -156,9 +174,13 @@ def run_investigation_loop(
             "case_id": case_id,
             "timestamp": _get_utc_timestamp(),
             "tool_called": "walk_graph",
-            "tool_input": {"account_id": account_id, "tier": "synthetic_network", "depth": 3},
+            "tool_input": {
+                "account_id": account_id,
+                "tier": "synthetic_network",
+                "depth": 3,
+            },
             "tool_output_summary": step2_summary,
-            "narration_sentence": step2_sentence
+            "narration_sentence": step2_sentence,
         }
         trace_events.append(evt2)
         if on_step_callback:
@@ -176,5 +198,5 @@ def run_investigation_loop(
         "primary_transaction_id": primary_transaction_id,
         "risk_score": risk_score,
         "trace_events": verified_events,
-        "narrative": grounded_narrative
+        "narrative": grounded_narrative,
     }
