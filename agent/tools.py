@@ -25,6 +25,10 @@ FRAUD_API_URL = os.getenv("FRAUD_API_URL", "http://localhost:8001/api/v1/fraud")
 LEDGER_API_URL = os.getenv("LEDGER_API_URL", "http://localhost:8002/api/v1/ledger")
 TYPOLOGY_API_URL = os.getenv("TYPOLOGY_API_URL", "http://localhost:8003/api/v1/typology")
 TOOL_TIMEOUT = float(os.getenv("AGENT_TOOL_TIMEOUT", "2.0"))
+# The fraud engine fails closed on this (engines/fraud/api.py::require_api_key); every
+# live-mode call into it must forward the same key the fraud service was started with.
+FRAUD_API_KEY = os.getenv("FRAUD_API_KEY", "")
+_FRAUD_AUTH_HEADERS = {"X-API-Key": FRAUD_API_KEY} if FRAUD_API_KEY else {}
 
 # Path to mock data fixtures
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "contracts", "mock_data")
@@ -48,7 +52,7 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
     # 1. Attempt Live API if configured
     if VERITY_ENV == "live":
         try:
-            resp = requests.get(f"{FRAUD_API_URL}/transaction/{transaction_id}", timeout=TOOL_TIMEOUT)
+            resp = requests.get(f"{FRAUD_API_URL}/transaction/{transaction_id}", headers=_FRAUD_AUTH_HEADERS, timeout=TOOL_TIMEOUT)
             if resp.status_code == 200:
                 return resp.json()
         except requests.exceptions.RequestException as e:
@@ -131,7 +135,7 @@ def get_shap_explanation(transaction_id: str) -> Dict[str, Any]:
     # 1. Attempt Live API if configured
     if VERITY_ENV == "live":
         try:
-            resp = requests.get(f"{FRAUD_API_URL}/explain/{transaction_id}", timeout=TOOL_TIMEOUT)
+            resp = requests.get(f"{FRAUD_API_URL}/explain/{transaction_id}", headers=_FRAUD_AUTH_HEADERS, timeout=TOOL_TIMEOUT)
             if resp.status_code == 200:
                 return resp.json()
         except requests.exceptions.RequestException as e:
@@ -271,7 +275,7 @@ def counterfactual(transaction_id: str, parameter_overrides: Dict[str, Any]) -> 
                 "transaction_id": transaction_id,
                 "parameter_overrides": parameter_overrides
             }
-            resp = requests.post(f"{FRAUD_API_URL}/counterfactual", json=payload, timeout=TOOL_TIMEOUT)
+            resp = requests.post(f"{FRAUD_API_URL}/counterfactual", json=payload, headers=_FRAUD_AUTH_HEADERS, timeout=TOOL_TIMEOUT)
             if resp.status_code == 200:
                 return resp.json()
         except requests.exceptions.RequestException as e:
