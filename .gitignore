@@ -2,13 +2,9 @@
 # Verity - .gitignore
 # ==========================================
 
-# Raw Datasets & Large Data Files
-data/raw/*
-!data/raw/.gitkeep
-*.csv
-*.xlsx
-*.parquet
-*.h5
+# Raw Datasets & Data Files (Tracked for team access during sprint)
+# Note: Re-enable exclusions when datasets are hosted externally
+
 
 # Machine Learning Models & Checkpoints
 *.pkl
