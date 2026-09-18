@@ -3,7 +3,7 @@ FastAPI Service for Ledger Engine.
 Person B: Serves walk_graph (real tier) and reconciliation anomalies.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from typing import List, Dict, Any
 
 app = FastAPI(title="Verity Ledger Engine API")

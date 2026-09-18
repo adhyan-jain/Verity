@@ -8,11 +8,14 @@
 
 # Machine Learning Models & Checkpoints
 *.pkl
+*.pkl.bak
+*.pkl.sha256
 *.joblib
 *.pt
 *.pth
 *.onnx
 *.bin
+engines/fraud/versions/
 
 # Python & Virtual Environments
 __pycache__/

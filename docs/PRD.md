@@ -1,9 +1,9 @@
 # Product Requirements Document (PRD) — Verity
 
-**Product Name:** Verity  
-**Document Version:** 1.0.0  
-**Target Audience:** Hackathon Judges, Engineering Team, Financial Crime Analysts  
-**Document Owner:** Verity Core Team  
+**Product Name:** Verity
+**Document Version:** 1.0.0
+**Target Audience:** Hackathon Judges, Engineering Team, Financial Crime Analysts
+**Document Owner:** Verity Core Team
 
 ---
 

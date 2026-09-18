@@ -3,7 +3,7 @@ FastAPI Service for Typology Engine.
 Person B: Serves walk_graph (synthetic tier) and typology flags.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from typing import List, Dict, Any
 
 app = FastAPI(title="Verity Typology Engine API")
