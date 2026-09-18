@@ -286,6 +286,22 @@ match the implementation, verified against `scripts/smoke_test.py`'s real calls.
   end-to-end. Flagging rather than deleting, since it's Person A's code and not blocking
   anything — a call to remove it belongs to a future cleanup pass with their sign-off.
 
+### 5.6 Architecture Decision: Exclusion of GAN-Based Synthetic Augmentation
+**Decision:** Do NOT add GAN-based synthetic data augmentation anywhere in the Verity pipeline.
+
+**Rationale & Evidence:**
+This decision was formally evaluated against the findings in the Proteus peer study (*Proteus: Closed-Loop Adversarial Synthetic Data Evaluation for AML and Fraud Classifiers*, 2019/2021). The ablation analysis in Proteus demonstrated that:
+1. **Static GAN augmentation slightly hurt macro-F1** across tested benchmarks, primarily due to synthetic mode collapse and distribution distortion in heavy-tailed tabular financial ledgers.
+2. In a closed-loop adaptive configuration, the GAN's only demonstrated utility was strictly *defensive* (acting as a fidelity gate to limit noise and catastrophic degradation from low-quality synthetic instances), never providing additive discriminative value over well-engineered tree ensembles (LightGBM/Random Forest).
+3. On real banking ledgers like `bank.xlsx` and PaySim, ground-truth label sparsity is better addressed via SMOTE/class-weighting and statistical baseline bounds (Median/MAD, rolling collective structuring) than generative adversarial synthesis.
+
+### 5.7 Evaluation Hygiene Protocol (Adaptive & Retraining Pipelines)
+For any adaptive learning, continuous drift remediation, or model retraining pipeline added to Verity:
+1. **Pre-adaptation Partitioning:** Every incoming evaluation window must be split into a fixed, held-out partition *BEFORE* adaptation or online training touches the data.
+2. **Strict Disjointness:** Scoring before and after adaptation must occur exclusively on this held-out partition. The adaptation pipeline must never observe or leak calibration or eval partition instances.
+3. **Partition Invariance:** The identical held-out partition must be reused across every experimental condition and baseline model compared.
+4. **Unit Verification:** Split integrity must be verified through automated unit tests confirming set disjointness ($A \cap B = \emptyset$), exact sample proportion, and deterministic seed reproducibility.
+
 ## 6. Fraud engine: split-conformal risk interval (`feature/fraud-conformal` branch)
 
 Adds a distribution-free prediction interval around the fraud engine's LightGBM risk score,
