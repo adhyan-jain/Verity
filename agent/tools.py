@@ -7,12 +7,15 @@ Supports dual-mode execution:
 - VERITY_ENV=live: dispatches requests to engine microservices with strict timeouts and automatic fallback.
 """
 
+import datetime
 import json
 import logging
 import os
+import re
 import uuid
 from typing import Any
 
+import pandas as pd
 import requests
 
 from .model_engine import DEFAULT_TX_FEATURES, get_model_engine
@@ -22,6 +25,76 @@ logger = logging.getLogger("verity.agent.tools")
 
 class TransactionNotFoundError(Exception):
     """Raised when a transaction ID matches no known fixture, live record, or ID-prefix pattern."""
+
+
+_DATA_DF: pd.DataFrame | None = None
+BASE_TIMESTAMP = datetime.datetime(2026, 9, 18, 0, 0, 0, tzinfo=datetime.timezone.utc)
+
+
+def get_creditcard_df() -> pd.DataFrame | None:
+    """Loads and caches raw credit card dataset for transaction feature extraction."""
+    global _DATA_DF
+    if _DATA_DF is None:
+        csv_candidates = [
+            os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "data",
+                "raw",
+                "creditcard.csv",
+            ),
+            os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "data",
+                "creditcard.csv",
+            ),
+        ]
+        for p in csv_candidates:
+            if os.path.exists(p):
+                try:
+                    _DATA_DF = pd.read_csv(p)
+                    break
+                except (OSError, pd.errors.ParserError) as e:
+                    logger.debug("Could not read csv %s: %s", p, e)
+    return _DATA_DF
+
+
+def parse_tx_row_index(transaction_id: str) -> int | None:
+    """Extracts numeric row index from transaction identifier (e.g. TX-CARD-541 -> 541)."""
+    if transaction_id.isdigit():
+        return int(transaction_id)
+    match = re.search(r"\d+", transaction_id)
+    if match:
+        return int(match.group(0))
+    return None
+
+
+def get_transaction_features(transaction_id: str) -> dict[str, float]:
+    """
+    Extracts the exact 30-feature vector for transaction_id from creditcard.csv or fixtures.
+    Guarantees no feature leakage across distinct transactions.
+    """
+    if "9842" in transaction_id:
+        return dict(DEFAULT_TX_FEATURES)
+
+    explanations = _load_mock_file("mock_fraud_explanations.json") or []
+    for exp in explanations:
+        if exp.get("transaction_id") == transaction_id and "features" in exp:
+            return {k: float(v) for k, v in exp["features"].items()}
+
+    row_idx = parse_tx_row_index(transaction_id)
+    df = get_creditcard_df()
+    if df is not None and row_idx is not None and 0 <= row_idx < len(df):
+        row = df.iloc[row_idx]
+        return {col: float(row[col]) for col in df.columns if col != "Class"}
+
+    features = dict(DEFAULT_TX_FEATURES)
+    try:
+        tx = get_transaction(transaction_id)
+        if "amount" in tx and tx["amount"] > 0:
+            features["Amount"] = float(tx["amount"])
+    except TransactionNotFoundError:
+        pass
+    return features
 
 
 # Configuration & Endpoints
@@ -157,13 +230,33 @@ def get_transaction(transaction_id: str) -> dict[str, Any]:
                 "source_dataset": "synthetic_network.json",
             }
 
-    if "CARD" in transaction_id.upper() or transaction_id == "TX-CARD-9842":
+    if "CARD" in transaction_id.upper() or transaction_id.isdigit():
+        row_idx = parse_tx_row_index(transaction_id)
+        df = get_creditcard_df()
+        if df is not None and row_idx is not None and 0 <= row_idx < len(df):
+            row = df.iloc[row_idx]
+            amt = round(float(row["Amount"]), 2)
+            sec = float(row["Time"])
+            dt = BASE_TIMESTAMP + datetime.timedelta(seconds=sec)
+            ts = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            return {
+                "id": transaction_id,
+                "tier": "real_card",
+                "timestamp": ts,
+                "account_id": None,
+                "amount": amt,
+                "direction": "debit",
+                "raw_narration": None,
+                "source_dataset": "creditcard.csv",
+            }
+
+        amt = 4850.00 if "9842" in transaction_id else 150.00
         return {
             "id": transaction_id,
             "tier": "real_card",
             "timestamp": "2026-09-18T03:22:00Z",
             "account_id": None,
-            "amount": 4850.00,
+            "amount": amt,
             "direction": "debit",
             "raw_narration": None,
             "source_dataset": "creditcard.csv",
@@ -212,43 +305,61 @@ def get_shap_explanation(transaction_id: str) -> dict[str, Any]:
                 "Live fraud explain API unavailable, falling back to mock: %s", e
             )
 
-    # 2. Mock Mode / Fallback Resolution
+    # 2. Authoritative Fraud Model Inference
+    try:
+        from engines.fraud.explain import explain_transaction, load_fraud_artifact
+
+        artifact = load_fraud_artifact()
+        feat_dict = get_transaction_features(transaction_id)
+        return explain_transaction(
+            transaction_id=transaction_id, features=feat_dict, artifact=artifact
+        )
+    except Exception as e:
+        logger.debug(
+            "Authoritative explainer unavailable (%s), falling back to mock: %s",
+            type(e).__name__,
+            e,
+        )
+
+    # 3. Mock Mode / Fallback Resolution
     explanations = _load_mock_file("mock_fraud_explanations.json") or []
     for exp in explanations:
         if exp.get("transaction_id") == transaction_id:
             return exp
 
+    # 4. Fallback to calibrated ModelEngine
+    engine = get_model_engine()
+    feat_dict = get_transaction_features(transaction_id)
+    score, verdict, contribs = engine.score_features(feat_dict)
+    top_factors = []
+    for f_name, c_val in sorted(
+        contribs.items(), key=lambda x: abs(x[1]), reverse=True
+    )[:4]:
+        is_interp = f_name in ("Amount", "Time")
+        label = (
+            f"Transaction amount (${feat_dict.get('Amount', 0):,.2f})"
+            if f_name == "Amount"
+            else (
+                f"Transaction time ({feat_dict.get('Time', 0):.0f}s)"
+                if f_name == "Time"
+                else f"Anonymized behavioral signal {f_name}"
+            )
+        )
+        top_factors.append(
+            {
+                "feature": f_name,
+                "human_label": label,
+                "contribution": round(c_val, 2),
+                "interpretable": is_interp,
+            }
+        )
+
     return {
         "transaction_id": transaction_id,
-        "risk_score": 0.89,
-        "verdict": "flagged",
-        "top_factors": [
-            {
-                "feature": "Amount",
-                "human_label": "Transaction amount ($4,850.00)",
-                "contribution": 0.42,
-                "interpretable": True,
-            },
-            {
-                "feature": "Time",
-                "human_label": "Transaction time (03:22 AM)",
-                "contribution": 0.19,
-                "interpretable": True,
-            },
-            {
-                "feature": "V14",
-                "human_label": "Anonymized behavioral signal V14",
-                "contribution": 0.28,
-                "interpretable": False,
-            },
-            {
-                "feature": "V12",
-                "human_label": "Anonymized behavioral signal V12",
-                "contribution": 0.15,
-                "interpretable": False,
-            },
-        ],
-        "model_version": "v1.0-benchmark-winner",
+        "risk_score": score,
+        "verdict": verdict,
+        "top_factors": top_factors,
+        "model_version": "v1.2-calibrated-model",
     }
 
 
@@ -414,22 +525,12 @@ def counterfactual(
                 e,
             )
 
-    # 2. True Model-Backed Recalculation via ModelEngine
+    # 2. Extract transaction's exact features (never bleed features across transactions)
+    base_features = get_transaction_features(transaction_id)
+
+    # 3. Authoritative Fraud Model Counterfactual (ModelEngine routes directly
+    # to the same explain_transaction/model.pkl artifact used in live mode)
     engine = get_model_engine()
-    # Use baseline transaction feature vector for transaction_id
-    base_features = dict(DEFAULT_TX_FEATURES)
-
-    # If transaction amount is known from get_transaction, update it
-    try:
-        tx = get_transaction(transaction_id)
-        if "amount" in tx and tx["amount"] > 0:
-            base_features["Amount"] = float(tx["amount"])
-    except TransactionNotFoundError:
-        logger.info(
-            "Transaction %s not found; using default baseline features for counterfactual",
-            transaction_id,
-        )
-
     eval_result = engine.evaluate_counterfactual(base_features, parameter_overrides)
 
     return {

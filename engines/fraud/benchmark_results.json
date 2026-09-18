@@ -1,0 +1,276 @@
+{
+  "dataset": "data/raw/creditcard.csv",
+  "total_records": 284807,
+  "fraud_prevalence": 0.001727,
+  "split": {
+    "strategy": "Time-based chronological 80/20 split",
+    "train_records": 227845,
+    "train_frauds": 417,
+    "test_records": 56962,
+    "test_frauds": 75
+  },
+  "models_evaluated": [
+    {
+      "model_name": "XGBoost",
+      "imbalance_strategy": "SMOTE",
+      "full_name": "XGBoost (SMOTE)",
+      "train_time_seconds": 2.86,
+      "inference_batch_10k_ms": 10.11,
+      "inference_latency_per_sample_us": 1.01,
+      "pr_auc": 0.809,
+      "roc_auc": 0.9883,
+      "threshold_0_5": {
+        "threshold": 0.5,
+        "precision": 0.7733,
+        "recall": 0.7733,
+        "f1": 0.7733,
+        "confusion_matrix": [
+          [
+            56870,
+            17
+          ],
+          [
+            17,
+            58
+          ]
+        ]
+      },
+      "calibrated_threshold": {
+        "threshold": 0.9009,
+        "precision": 0.9825,
+        "recall": 0.7467,
+        "f1": 0.8485,
+        "confusion_matrix": [
+          [
+            56886,
+            1
+          ],
+          [
+            19,
+            56
+          ]
+        ]
+      }
+    },
+    {
+      "model_name": "LightGBM",
+      "imbalance_strategy": "SMOTE",
+      "full_name": "LightGBM (SMOTE)",
+      "train_time_seconds": 2.324,
+      "inference_batch_10k_ms": 39.3,
+      "inference_latency_per_sample_us": 3.93,
+      "pr_auc": 0.8024,
+      "roc_auc": 0.9856,
+      "threshold_0_5": {
+        "threshold": 0.5,
+        "precision": 0.75,
+        "recall": 0.76,
+        "f1": 0.755,
+        "confusion_matrix": [
+          [
+            56868,
+            19
+          ],
+          [
+            18,
+            57
+          ]
+        ]
+      },
+      "calibrated_threshold": {
+        "threshold": 0.8751,
+        "precision": 0.9661,
+        "recall": 0.76,
+        "f1": 0.8507,
+        "confusion_matrix": [
+          [
+            56885,
+            2
+          ],
+          [
+            18,
+            57
+          ]
+        ]
+      }
+    },
+    {
+      "model_name": "Logistic Regression",
+      "imbalance_strategy": "SMOTE",
+      "full_name": "Logistic Regression (SMOTE)",
+      "train_time_seconds": 1.134,
+      "inference_batch_10k_ms": 5.07,
+      "inference_latency_per_sample_us": 0.51,
+      "pr_auc": 0.7998,
+      "roc_auc": 0.9832,
+      "threshold_0_5": {
+        "threshold": 0.5,
+        "precision": 0.5825,
+        "recall": 0.8,
+        "f1": 0.6742,
+        "confusion_matrix": [
+          [
+            56844,
+            43
+          ],
+          [
+            15,
+            60
+          ]
+        ]
+      },
+      "calibrated_threshold": {
+        "threshold": 0.9969,
+        "precision": 0.9811,
+        "recall": 0.6933,
+        "f1": 0.8125,
+        "confusion_matrix": [
+          [
+            56886,
+            1
+          ],
+          [
+            23,
+            52
+          ]
+        ]
+      }
+    },
+    {
+      "model_name": "XGBoost",
+      "imbalance_strategy": "Class Weighting",
+      "full_name": "XGBoost (Class Weighting)",
+      "train_time_seconds": 6.658,
+      "inference_batch_10k_ms": 8.76,
+      "inference_latency_per_sample_us": 0.88,
+      "pr_auc": 0.7996,
+      "roc_auc": 0.9842,
+      "threshold_0_5": {
+        "threshold": 0.5,
+        "precision": 0.75,
+        "recall": 0.76,
+        "f1": 0.755,
+        "confusion_matrix": [
+          [
+            56868,
+            19
+          ],
+          [
+            18,
+            57
+          ]
+        ]
+      },
+      "calibrated_threshold": {
+        "threshold": 0.9875,
+        "precision": 0.9815,
+        "recall": 0.7067,
+        "f1": 0.8217,
+        "confusion_matrix": [
+          [
+            56886,
+            1
+          ],
+          [
+            22,
+            53
+          ]
+        ]
+      }
+    },
+    {
+      "model_name": "Logistic Regression",
+      "imbalance_strategy": "Class Weighting",
+      "full_name": "Logistic Regression (Class Weighting)",
+      "train_time_seconds": 1.561,
+      "inference_batch_10k_ms": 5.3,
+      "inference_latency_per_sample_us": 0.53,
+      "pr_auc": 0.7633,
+      "roc_auc": 0.9863,
+      "threshold_0_5": {
+        "threshold": 0.5,
+        "precision": 0.071,
+        "recall": 0.8933,
+        "f1": 0.1315,
+        "confusion_matrix": [
+          [
+            56010,
+            877
+          ],
+          [
+            8,
+            67
+          ]
+        ]
+      },
+      "calibrated_threshold": {
+        "threshold": 0.9999,
+        "precision": 0.875,
+        "recall": 0.7467,
+        "f1": 0.8058,
+        "confusion_matrix": [
+          [
+            56879,
+            8
+          ],
+          [
+            19,
+            56
+          ]
+        ]
+      }
+    },
+    {
+      "model_name": "LightGBM",
+      "imbalance_strategy": "Class Weighting",
+      "full_name": "LightGBM (Class Weighting)",
+      "train_time_seconds": 2.059,
+      "inference_batch_10k_ms": 21.64,
+      "inference_latency_per_sample_us": 2.16,
+      "pr_auc": 0.6752,
+      "roc_auc": 0.8265,
+      "threshold_0_5": {
+        "threshold": 0.5,
+        "precision": 0.7162,
+        "recall": 0.7067,
+        "f1": 0.7114,
+        "confusion_matrix": [
+          [
+            56866,
+            21
+          ],
+          [
+            22,
+            53
+          ]
+        ]
+      },
+      "calibrated_threshold": {
+        "threshold": 0.9399,
+        "precision": 0.9464,
+        "recall": 0.7067,
+        "f1": 0.8092,
+        "confusion_matrix": [
+          [
+            56884,
+            3
+          ],
+          [
+            22,
+            53
+          ]
+        ]
+      }
+    }
+  ],
+  "winner": {
+    "model": "XGBoost (SMOTE)",
+    "pr_auc": 0.809,
+    "roc_auc": 0.9883,
+    "calibrated_f1": 0.8485,
+    "calibrated_precision": 0.9825,
+    "calibrated_recall": 0.7467,
+    "calibrated_threshold": 0.9009,
+    "justification": "Selected XGBoost (SMOTE) based on superior PR-AUC (0.8090) and Calibrated F1-score (0.8485) with high precision (98.2%) and high recall (74.7%), controlling false alarms to only 1 out of 56887 negative test transactions with sub-microsecond inference latency (1.01 \u00b5s/sample)."
+  }
+}

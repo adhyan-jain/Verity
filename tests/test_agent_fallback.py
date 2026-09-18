@@ -63,3 +63,23 @@ def test_latency_guard_timeout():
     )
     assert res.get("is_fallback") is True
     assert "Execution exceeded latency limit" in res.get("fallback_reason", "")
+
+
+def test_latency_guard_preempts_hanging_task():
+    import time
+
+    def hanging_task():
+        time.sleep(3.0)
+        return {"done": True}
+
+    t0 = time.perf_counter()
+    res = execute_with_latency_guard(
+        hanging_task, query="why was this flagged", timeout_seconds=0.1
+    )
+    duration = time.perf_counter() - t0
+
+    assert duration < 1.0, (
+        f"Latency guard did not preempt task promptly: took {duration:.2f}s"
+    )
+    assert res.get("is_fallback") is True
+    assert "Execution exceeded latency limit" in res.get("fallback_reason", "")

@@ -68,7 +68,7 @@ def evaluate_adversarial_set(
     adversarial_file: str = "data/synthetic/adversarial_set.json",
 ) -> dict[str, Any]:
     """
-    Evaluates detector accuracy and false-positive rates on the held-out adversarial set.
+    Evaluates detector accuracy, precision, recall, specificity, and false-positive rates on the held-out adversarial set.
     """
     if not os.path.exists(adversarial_file):
         return {"error": "Adversarial test set not found"}
@@ -77,7 +77,7 @@ def evaluate_adversarial_set(
         test_cases = json.load(f)
 
     results = []
-    correct_count = 0
+    tp = fp = tn = fn = 0
 
     for case in test_cases:
         test_id = case["test_id"]
@@ -91,8 +91,17 @@ def evaluate_adversarial_set(
 
         actual_verdict = "flagged" if len(detected) > 0 else "benign"
         is_correct = actual_verdict == expected
-        if is_correct:
-            correct_count += 1
+
+        if expected == "flagged":
+            if actual_verdict == "flagged":
+                tp += 1
+            else:
+                fn += 1
+        else:
+            if actual_verdict == "benign":
+                tn += 1
+            else:
+                fp += 1
 
         results.append(
             {
@@ -105,13 +114,28 @@ def evaluate_adversarial_set(
             }
         )
 
-    accuracy = correct_count / max(1, len(test_cases))
+    total = len(test_cases)
+    accuracy = (tp + tn) / max(1, total)
+    precision = tp / max(1, tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / max(1, tp + fn) if (tp + fn) > 0 else 0.0
+    specificity = tn / max(1, tn + fp) if (tn + fp) > 0 else 0.0
+    f1 = 2 * (precision * recall) / max(1e-10, precision + recall)
+
     return {
-        "total_test_cases": len(test_cases),
-        "passed_cases": correct_count,
-        "accuracy": round(accuracy, 3),
+        "total_test_cases": total,
+        "passed_cases": tp + tn,
+        "true_positives": tp,
+        "true_negatives": tn,
+        "false_positives": fp,
+        "false_negatives": fn,
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "f1": round(f1, 4),
+        "specificity": round(specificity, 4),
+        "accuracy": round(accuracy, 4),
         "details": results,
     }
+
 
 
 if __name__ == "__main__":
@@ -123,13 +147,16 @@ if __name__ == "__main__":
             f"  [{f['typology'].upper()}] {f['flag_id']} (Conf: {f['confidence']}) -> Accounts: {f['involved_accounts']}, Evt Txns: {f['evidence_transaction_ids']}"
         )
 
-    print("\nEvaluating Adversarial Hold-Out Test Set...")
+    print("\nEvaluating Adversarial Hold-Out Test Set (50 cases)...")
     eval_res = evaluate_adversarial_set()
     print(
-        f"Accuracy: {eval_res['accuracy'] * 100:.1f}% ({eval_res['passed_cases']}/{eval_res['total_test_cases']} passed)"
+        f"Results: Precision: {eval_res['precision'] * 100:.1f}%, Recall: {eval_res['recall'] * 100:.1f}%, "
+        f"F1: {eval_res['f1']:.4f}, Specificity: {eval_res['specificity'] * 100:.1f}%, Accuracy: {eval_res['accuracy'] * 100:.1f}% "
+        f"(TP: {eval_res['true_positives']}, TN: {eval_res['true_negatives']}, FP: {eval_res['false_positives']}, FN: {eval_res['false_negatives']})"
     )
     for d in eval_res["details"]:
         status_icon = "PASS" if d["passed"] else "FAIL"
         print(
             f"  [{status_icon}] {d['test_id']}: {d['description']} -> Expected: {d['expected_verdict']}, Got: {d['actual_verdict']}"
         )
+

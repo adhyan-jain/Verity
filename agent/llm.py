@@ -2,35 +2,192 @@
 Hand-Rolled LLM Reasoning Engine for Verity.
 Person C: Provides explicit LLM tool-selection and narrative synthesis.
 ZERO framework bloat (No LangChain, AutoGen, or CrewAI).
-Supports both live OpenAI/Gemini/Ollama endpoints and a built-in reasoning engine.
+Supports both live OpenAI/OpenRouter/Ollama endpoints and a built-in reasoning engine.
 """
 
 import json
 import logging
 import os
+import re
 from typing import Any
 
 import requests
 
 logger = logging.getLogger("verity.agent.llm")
 
-# Optional external LLM configuration
-LLM_API_KEY = os.getenv("VERITY_LLM_API_KEY", os.getenv("OPENAI_API_KEY", ""))
-LLM_BASE_URL = os.getenv(
-    "VERITY_LLM_BASE_URL", os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-)
-LLM_MODEL = os.getenv("VERITY_LLM_MODEL", "gpt-4o-mini")
-# Local models (e.g. Ollama) generate slower than a hosted API; keep this
-# generous so a cold local model doesn't get treated as "unreachable".
-LLM_TIMEOUT_SECONDS = float(os.getenv("VERITY_LLM_TIMEOUT", "45.0"))
-
-VALID_ACTIONS = {
+ALLOWED_TOOLS: set[str] = {
     "get_transaction",
     "get_shap_explanation",
     "walk_graph",
     "counterfactual",
     "finish",
 }
+
+
+def mask_key(key: str | None) -> str:
+    """Masks secret API key for safe logging/display. Never prints or logs full key."""
+    if not key:
+        return "[NOT SET]"
+    k = str(key).strip()
+    if len(k) <= 8:
+        return "****"
+    return f"{k[:3]}...{k[-4:]}"
+
+
+def resolve_llm_config(
+    provider: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+    timeout: float | None = None,
+) -> tuple[str, str, str, str, float]:
+    """
+    Resolves LLM provider configuration from arguments and environment variables.
+    Supports OpenRouter, OpenAI, Ollama (or any OpenAI-compatible endpoint), and
+    a local built-in fallback. Never exposes raw API keys in logs or exceptions.
+    """
+    resolved_provider = (
+        (provider or os.getenv("VERITY_LLM_PROVIDER") or "").lower().strip()
+    )
+
+    resolved_key = (
+        api_key
+        if api_key is not None
+        else (os.getenv("VERITY_LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "")
+    ).strip()
+
+    explicit_base_url = (
+        base_url or os.getenv("VERITY_LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL")
+    )
+    explicit_model = model or os.getenv("VERITY_LLM_MODEL")
+
+    # Auto-detect provider if not explicitly provided
+    if not resolved_provider:
+        if (
+            explicit_base_url
+            and "openrouter.ai" in explicit_base_url
+            or resolved_key.startswith("sk-or-")
+        ):
+            resolved_provider = "openrouter"
+        elif explicit_base_url and "openai.com" in explicit_base_url:
+            resolved_provider = "openai"
+        elif explicit_base_url and (
+            "localhost" in explicit_base_url or "127.0.0.1" in explicit_base_url
+        ):
+            resolved_provider = "ollama"
+        elif resolved_key:
+            resolved_provider = "openai"
+        else:
+            resolved_provider = "builtin"
+
+    # Default URLs and models by provider
+    if resolved_provider == "openrouter":
+        default_base_url = "https://openrouter.ai/api/v1"
+        default_model = "openrouter/free"
+    elif resolved_provider == "ollama":
+        default_base_url = "http://localhost:11434/v1"
+        default_model = "qwen3:8b"
+    else:
+        default_base_url = "https://api.openai.com/v1"
+        default_model = "gpt-4o-mini"
+
+    final_base_url = (explicit_base_url or default_base_url).rstrip("/")
+    final_model = explicit_model or default_model
+
+    # Local models (e.g. Ollama) generate slower than a hosted API, so the
+    # timeout default is higher for that provider unless explicitly overridden.
+    default_timeout = "45.0" if resolved_provider == "ollama" else "8.0"
+    try:
+        final_timeout = float(
+            timeout or os.getenv("VERITY_LLM_TIMEOUT", default_timeout)
+        )
+    except (ValueError, TypeError):
+        final_timeout = float(default_timeout)
+
+    return resolved_provider, resolved_key, final_base_url, final_model, final_timeout
+
+
+# Global default configuration constants (backward-compatible)
+_DEF_PROVIDER, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, LLM_TIMEOUT_SECONDS = (
+    resolve_llm_config()
+)
+
+
+def parse_llm_response(content: str) -> dict[str, Any] | None:
+    """
+    Parses and extracts required fields from LLM response:
+    - thought: reasoning text
+    - action: tool name or 'finish' (validated against ALLOWED_TOOLS)
+    - action_input: dict of arguments
+    - candidate_narrative: optional narrative text
+
+    Handles raw JSON, markdown fences (```json ... ```), and surrounding text.
+    Returns None (triggering builtin-reasoner fallback) for anything that
+    doesn't parse cleanly or proposes an action outside the exact tool enum —
+    some models (especially smaller local ones) hallucinate near-miss tool
+    names like "get_transaction_details" instead of "get_transaction".
+    """
+    if not content or not isinstance(content, str):
+        return None
+
+    text = content.strip()
+
+    # Remove markdown code block fences if present
+    if "```" in text:
+        fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+        if fence_match:
+            text = fence_match.group(1).strip()
+
+    # Extract outermost JSON object if wrapped in explanatory text
+    if not (text.startswith("{") and text.endswith("}")):
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            text = text[start : end + 1]
+
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning("Failed to parse LLM JSON response: %s", type(e).__name__)
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    action = str(data.get("action", "")).strip().lower()
+    if action not in ALLOWED_TOOLS:
+        logger.warning(
+            "LLM proposed unallowed action %r (allowed: %s), falling back to builtin reasoner",
+            action,
+            ALLOWED_TOOLS,
+        )
+        return None
+
+    raw_input = data.get("action_input", {})
+    if isinstance(raw_input, str):
+        try:
+            parsed_input = json.loads(raw_input)
+            action_input = (
+                parsed_input if isinstance(parsed_input, dict) else {"input": raw_input}
+            )
+        except (json.JSONDecodeError, ValueError):
+            action_input = {"input": raw_input}
+    elif isinstance(raw_input, dict):
+        action_input = raw_input
+    else:
+        action_input = {}
+
+    thought = str(data.get("thought", "")).strip()
+    candidate_narrative = data.get("candidate_narrative")
+    if candidate_narrative is not None:
+        candidate_narrative = str(candidate_narrative).strip()
+
+    return {
+        "thought": thought,
+        "action": action,
+        "action_input": action_input,
+        "candidate_narrative": candidate_narrative,
+    }
 
 
 SYSTEM_PROMPT = """You are Verity's Financial Crime Investigation Agent, assisting analyst Priya.
@@ -56,6 +213,8 @@ Rules:
 class VerityLLMClient:
     """
     Transparent, hand-rolled LLM client for tool calling and reasoning.
+    Supports OpenRouter, OpenAI, Ollama, and a local built-in fallback.
+    Never leaks or logs API keys.
     """
 
     def __init__(
@@ -63,10 +222,32 @@ class VerityLLMClient:
         api_key: str | None = None,
         base_url: str | None = None,
         model: str | None = None,
+        provider: str | None = None,
+        timeout: float | None = None,
     ):
-        self.api_key = api_key or LLM_API_KEY
-        self.base_url = (base_url or LLM_BASE_URL).rstrip("/")
-        self.model = model or LLM_MODEL
+        prov, key, url, mdl, tout = resolve_llm_config(
+            provider=provider,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            timeout=timeout,
+        )
+        self.provider = prov
+        self.api_key = key
+        self.base_url = url
+        self.model = mdl
+        self.timeout = tout
+
+    def get_config_summary(self) -> dict[str, Any]:
+        """Returns non-sensitive configuration details with masked credentials."""
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "base_url": self.base_url,
+            "api_key_configured": bool(self.api_key),
+            "api_key_masked": mask_key(self.api_key),
+            "timeout": self.timeout,
+        }
 
     def decide_next_step(
         self,
@@ -92,7 +273,8 @@ class VerityLLMClient:
                     return external_resp
             except Exception as e:
                 logger.warning(
-                    "External LLM call failed (%s), falling back to builtin reasoner", e
+                    "External LLM call failed (%s), falling back to builtin reasoner",
+                    type(e).__name__,
                 )
 
         # Built-in dynamic reasoning engine
@@ -111,6 +293,8 @@ class VerityLLMClient:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/adhyan-jain/Verity",
+            "X-Title": "Verity Anti-Financial Crime Agent",
         }
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -123,35 +307,38 @@ class VerityLLMClient:
                 ),
             },
         ]
-        resp = requests.post(
-            f"{self.base_url}/chat/completions",
-            headers=headers,
-            json={
-                "model": self.model,
-                "messages": messages,
-                "response_format": {"type": "json_object"},
-            },
-            timeout=LLM_TIMEOUT_SECONDS,
-        )
-        if resp.status_code != 200:
-            return None
+        url = f"{self.base_url}/chat/completions"
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+        }
 
-        content = resp.json()["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
-
-        # Some local models hallucinate a near-miss tool name (e.g.
-        # "get_transaction_details"). Treat anything outside the exact
-        # enum as an invalid response so the caller falls back to the
-        # deterministic reasoner for this step, rather than silently
-        # stalling the loop on an action nothing dispatches.
-        if parsed.get("action") not in VALID_ACTIONS:
-            logger.warning(
-                "External LLM returned invalid action %r, falling back to builtin reasoner",
-                parsed.get("action"),
+        try:
+            resp = requests.post(
+                url, headers=headers, json=payload, timeout=self.timeout
             )
-            return None
+            # Some free OpenRouter/local models don't support
+            # response_format={"type": "json_object"} - retry without it.
+            if resp.status_code == 400 and "response_format" in resp.text:
+                payload.pop("response_format", None)
+                resp = requests.post(
+                    url, headers=headers, json=payload, timeout=self.timeout
+                )
 
-        return parsed
+            if resp.status_code == 200:
+                body = resp.json()
+                content = body["choices"][0]["message"]["content"]
+                return parse_llm_response(content)
+            logger.warning(
+                "External LLM returned HTTP %s (model: %s)",
+                resp.status_code,
+                self.model,
+            )
+        except requests.exceptions.RequestException as e:
+            logger.warning("External LLM request error: %s", type(e).__name__)
+
+        return None
 
     def _builtin_reasoning(
         self,
@@ -263,6 +450,8 @@ class VerityLLMClient:
                 headers = {
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
+                    "HTTP-Referer": "https://github.com/adhyan-jain/Verity",
+                    "X-Title": "Verity Anti-Financial Crime Agent",
                 }
                 messages = [
                     {
@@ -281,12 +470,20 @@ class VerityLLMClient:
                     f"{self.base_url}/chat/completions",
                     headers=headers,
                     json={"model": self.model, "messages": messages},
-                    timeout=LLM_TIMEOUT_SECONDS,
+                    timeout=self.timeout,
                 )
                 if resp.status_code == 200:
                     return resp.json()["choices"][0]["message"]["content"].strip()
+                logger.warning(
+                    "External LLM chat returned HTTP %s (model: %s)",
+                    resp.status_code,
+                    self.model,
+                )
             except Exception as e:
-                logger.warning("External LLM chat failed (%s), using local reasoner", e)
+                logger.warning(
+                    "External LLM chat failed (%s), using local reasoner",
+                    type(e).__name__,
+                )
 
         # Built-in contextual reasoning
         if trace_events:

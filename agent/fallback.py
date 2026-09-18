@@ -94,6 +94,20 @@ def get_cached_answer(
     return None
 
 
+def _default_deadline_fallback(
+    timeout_seconds: float, elapsed: float
+) -> dict[str, Any]:
+    """Synthesized fallback answer used when no cached Q&A fixture matches."""
+    return {
+        "question_id": "deadline_fallback",
+        "response": "Investigation execution timed out before completion. Displaying benchmark analysis.",
+        "is_fallback": True,
+        "fallback_notice": STANDARD_FALLBACK_NOTICE,
+        "latency_seconds": elapsed,
+        "fallback_reason": f"Execution exceeded latency limit of {timeout_seconds}s (took {elapsed:.1f}s).",
+    }
+
+
 def execute_with_latency_guard(
     task_func: Callable[[], dict[str, Any]], query: str, timeout_seconds: float = 20.0
 ) -> dict[str, Any]:
@@ -108,30 +122,44 @@ def execute_with_latency_guard(
     returns on its own.
     """
     start_time = time.perf_counter()
+
+    if timeout_seconds <= 0.0:
+        return _default_deadline_fallback(timeout_seconds, 0.0)
+
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(task_func)
     try:
-        result = future.result(timeout=timeout_seconds)
-        return result
-    except concurrent.futures.TimeoutError:
-        elapsed = time.perf_counter() - start_time
-        cached = get_cached_answer(query)
-        if cached:
+        future = executor.submit(task_func)
+        try:
+            result = future.result(timeout=timeout_seconds)
+            return result
+        except concurrent.futures.TimeoutError:
+            elapsed = time.perf_counter() - start_time
+            executor.shutdown(wait=False, cancel_futures=True)
+            logger.warning(
+                "Task exceeded deadline of %ss (took %.2fs), returning fallback.",
+                timeout_seconds,
+                elapsed,
+            )
+            cached = get_cached_answer(query) or _default_deadline_fallback(
+                timeout_seconds, elapsed
+            )
             cached["latency_seconds"] = elapsed
             cached["fallback_reason"] = (
                 f"Execution exceeded latency limit of {timeout_seconds}s (took {elapsed:.1f}s)."
             )
             return cached
-        raise TimeoutError(
-            f"Execution exceeded latency limit of {timeout_seconds}s and no cached fallback was available."
-        ) from None
-    except Exception as exc:
-        logger.warning("Task execution failed (%s), attempting cached fallback", exc)
-        cached = get_cached_answer(query)
-        if cached:
-            cached["fallback_reason"] = f"Execution error: {exc!s}"
-            return cached
-        raise exc
+        except Exception as exc:
+            elapsed = time.perf_counter() - start_time
+            executor.shutdown(wait=False, cancel_futures=True)
+            logger.warning(
+                "Task execution failed (%s), attempting cached fallback", exc
+            )
+            cached = get_cached_answer(query)
+            if cached:
+                cached["latency_seconds"] = elapsed
+                cached["fallback_reason"] = f"Execution error: {exc!s}"
+                return cached
+            raise exc
     finally:
         # Don't block returning the fallback on a still-hanging worker
         # thread; let it finish/die on its own in the background.

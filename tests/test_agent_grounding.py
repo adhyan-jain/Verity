@@ -129,3 +129,25 @@ def test_audit_grounding_separates_retained_and_pruned():
     assert audit["pruned_count"] == 1
     assert "Cayman" not in audit["grounded_narrative"]
     assert "TX-CARD-9842" in audit["grounded_narrative"]
+    assert audit["supporting_event_ids"][audit["retained_sentences"][0]] == "EVT-101"
+
+
+def test_appended_hallucination_to_approved_sentence_rejected():
+    """
+    Verifies that appending unverified claims/entities/amounts to an approved sentence
+    fails strict verification (closing the substring loophole).
+    """
+    trace_events = [
+        {
+            "event_id": "EVT-101",
+            "narration_sentence": "Retrieved transaction TX-CARD-9842 for $4,850.00 at 03:22 AM.",
+            "tool_output_summary": "TX-CARD-9842 retrieved.",
+            "tool_input": {"transaction_id": "TX-CARD-9842"},
+        }
+    ]
+    candidate = "Retrieved transaction TX-CARD-9842 for $4,850.00 at 03:22 AM and transferred to offshore account ACC-9999 for $99,000.00."
+    is_grounded, reason = is_sentence_strictly_grounded(
+        candidate, [e["narration_sentence"] for e in trace_events], trace_events
+    )
+    assert is_grounded is False
+    assert reason is not None

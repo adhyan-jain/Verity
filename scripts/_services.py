@@ -64,10 +64,12 @@ def start_service(target: str, port: int, extra_env: dict | None = None) -> subp
     )
 
 
-def wait_healthy(port: int, health_path: str, timeout: float = 60.0) -> bool:
+def wait_healthy(port: int, health_path: str, timeout: float = 60.0, proc: subprocess.Popen | None = None) -> bool:
     deadline = time.time() + timeout
     url = f"http://127.0.0.1:{port}{health_path}"
     while time.time() < deadline:
+        if proc and proc.poll() is not None:
+            return False
         try:
             with urllib.request.urlopen(url, timeout=2.0) as resp:
                 if resp.status == 200:
@@ -84,14 +86,24 @@ def start_all_backend_services() -> dict[str, subprocess.Popen]:
     RuntimeError (after killing whatever did start) if any fails to come up."""
     procs: dict[str, subprocess.Popen] = {}
     for name, target, port, _ in SERVICES:
-        print(f"[start] {name} -> http://127.0.0.1:{port}")
+        print(f"[start] {name} -> http://127.0.0.1:{port}", flush=True)
         procs[name] = start_service(target, port)
 
     for name, _, port, health_path in SERVICES:
-        if not wait_healthy(port, health_path):
+        proc = procs[name]
+        if not wait_healthy(port, health_path, proc=proc):
+            output = ""
+            try:
+                if proc.stdout:
+                    output = proc.stdout.read()
+            except Exception:
+                pass
             stop_all(procs)
-            raise RuntimeError(f"{name} service did not become healthy on port {port} within timeout")
-        print(f"[ready] {name} healthy")
+            err_msg = f"{name} service did not become healthy on port {port} within timeout."
+            if output:
+                err_msg += f"\n--- {name} output ---\n{output.strip()}\n--- end output ---"
+            raise RuntimeError(err_msg)
+        print(f"[ready] {name} healthy", flush=True)
 
     return procs
 
@@ -99,9 +111,15 @@ def start_all_backend_services() -> dict[str, subprocess.Popen]:
 def stop_all(procs: dict[str, subprocess.Popen]) -> None:
     for name, proc in procs.items():
         if proc.poll() is None:
-            proc.terminate()
+            if os.name == "nt":
+                try:
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    proc.terminate()
+            else:
+                proc.terminate()
     for name, proc in procs.items():
         try:
-            proc.wait(timeout=10)
+            proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()

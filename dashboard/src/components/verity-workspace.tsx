@@ -12,7 +12,10 @@ import {
   Sparkles,
   Cpu,
   RefreshCw,
+  AlertTriangle,
+  Radio,
 } from "lucide-react";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   checkEnginesHealth,
@@ -523,11 +526,24 @@ function EvidencePanel({
   const [view, setView] = useState<EvidenceView>(
     item.tier === "synthetic_network" ? "network" : "timeline",
   );
+  const isLive = view === "timeline" ? timeline !== null : network !== null;
+
   return (
     <section className="animate-rise-delay rounded-md bg-panel p-4 shadow-soft md:p-5">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-        <div>
-          <div className="eyebrow">Evidence surface</div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="eyebrow">Evidence surface</span>
+            {isLive ? (
+              <span className="inline-flex items-center gap-1 rounded bg-teal/15 px-2 py-0.5 font-mono text-[9px] font-semibold uppercase text-teal border border-teal/30">
+                <Radio className="size-3 animate-pulse" /> Live Surface
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded bg-amber/15 px-2 py-0.5 font-mono text-[9px] font-semibold uppercase text-amber border border-amber/30">
+                <AlertTriangle className="size-3" /> Cached Exhibit
+              </span>
+            )}
+          </div>
           <h2 className="mt-1 font-display text-xl font-bold">Transaction reconstruction</h2>
         </div>
         <div className="flex shrink-0 gap-1 rounded-md bg-paper p-1 shadow-inset">
@@ -574,9 +590,15 @@ function Factors({ item, liveFactors }: { item: CaseFile; liveFactors: FraudExpl
     <section className="rounded-md bg-panel p-4 shadow-soft md:p-5">
       <div className="flex items-center justify-between">
         <div className="eyebrow">Risk factors</div>
-        <span className="font-mono text-[9px] uppercase text-muted-foreground">
-          {liveFactors ? "Live SHAP" : "Demo exhibit"}
-        </span>
+        {liveFactors ? (
+          <span className="inline-flex items-center gap-1 rounded bg-teal/15 px-2 py-0.5 font-mono text-[9px] font-semibold uppercase text-teal border border-teal/30">
+            <Radio className="size-3 animate-pulse" /> Live SHAP ({liveFactors.model_version})
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded bg-amber/15 px-2 py-0.5 font-mono text-[9px] font-semibold uppercase text-amber border border-amber/30">
+            <AlertTriangle className="size-3" /> Cached Exhibit
+          </span>
+        )}
       </div>
       <div className="mt-4 divide-y divide-ink/10">
         {factors.map((factor) => (
@@ -622,13 +644,20 @@ function ReasoningTrace({
           <div className="eyebrow">Reasoning trace</div>
           <h2 className="mt-1 font-display text-xl font-bold">Every sentence has a source</h2>
         </div>
-        <span className="flex shrink-0 items-center gap-1.5 font-mono text-[9px] uppercase text-teal">
-          <ShieldCheck className="size-3.5" />{" "}
-          {loading
-            ? "Investigating…"
-            : investigation
-              ? "Grounded · live agent"
-              : "Grounded · demo exhibit"}
+        <span className="flex shrink-0 items-center gap-1.5 font-mono text-[9px] uppercase">
+          {loading ? (
+            <span className="inline-flex items-center gap-1 rounded bg-signal/15 px-2 py-0.5 font-semibold text-signal border border-signal/30">
+              <RefreshCw className="size-3 animate-spin" /> Investigating…
+            </span>
+          ) : investigation ? (
+            <span className="inline-flex items-center gap-1 rounded bg-teal/15 px-2 py-0.5 font-semibold text-teal border border-teal/30">
+              <Radio className="size-3 animate-pulse" /> Live Grounded Trace
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded bg-amber/15 px-2 py-0.5 font-semibold text-amber border border-amber/30">
+              <AlertTriangle className="size-3" /> Cached Demo Trace (Agent Offline)
+            </span>
+          )}
         </span>
       </div>
       <div className="mt-4 space-y-0">
@@ -656,6 +685,7 @@ function ReasoningTrace({
 }
 
 function QueryPanel({
+
   item,
   onScoreChange,
 }: {
@@ -826,7 +856,18 @@ export function VerityWorkspace() {
           }}
         />
         <main className="min-w-0 space-y-4">
+          {!live.loading && !live.investigation && (
+            <div className="flex items-start gap-3 rounded-md border border-amber/40 bg-amber/10 p-4 text-xs text-amber font-mono shadow-sm">
+              <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber animate-pulse" />
+              <div className="leading-relaxed">
+                <span className="font-bold uppercase tracking-wider">Showing Cached Data — Live Service Unavailable:</span>{" "}
+                The workspace is rendering pre-computed benchmark fixtures because backend microservices are offline. Run{" "}
+                <code className="rounded bg-amber/20 px-1.5 py-0.5 font-bold text-amber">python scripts/dev_up.py</code> to connect live LightGBM/SHAP and FATF traversal engines (Ports 8000–8003).
+              </div>
+            </div>
+          )}
           <RiskHeader item={item} liveRisk={liveRisk} riskSource={riskSource} />
+
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(260px,0.7fr)]">
             <EvidencePanel
               key={`${item.id}-evidence`}
