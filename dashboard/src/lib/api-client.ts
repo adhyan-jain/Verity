@@ -536,8 +536,10 @@ export const DEFAULT_AML_QUEUE: AmlQueueItem[] = [
 ];
 
 /** Looks up an account's queue record, falling back to the first record — DEFAULT_AML_QUEUE is a non-empty literal, so this is always defined. */
-function getQueueItem(accountId: string): AmlQueueItem {
-  return DEFAULT_AML_QUEUE.find((q) => q.account_id === accountId) ?? DEFAULT_AML_QUEUE[0]!;
+function getQueueItem(accountId: string, transactionId?: string): AmlQueueItem {
+  return DEFAULT_AML_QUEUE.find((q) => q.account_id === accountId && (!transactionId || q.id === transactionId))
+    ?? DEFAULT_AML_QUEUE.find((q) => q.account_id === accountId)
+    ?? DEFAULT_AML_QUEUE[0]!;
 }
 
 export const DEFAULT_AML_BREAKDOWN: AmlBreakdownResponse = {
@@ -777,8 +779,8 @@ export async function fetchAmlTimeline(
   return getAmlTimelineFixture(accountId);
 }
 
-function buildAmlBreakdownFixture(accountId: string): AmlBreakdownResponse {
-  const item = getQueueItem(accountId);
+function buildAmlBreakdownFixture(accountId: string, transactionId?: string): AmlBreakdownResponse {
+  const item = getQueueItem(accountId, transactionId);
   const amountStr = item.amount.toLocaleString("en-IN", { maximumFractionDigits: 2 });
   const dateStr = item.timestamp.slice(0, 10);
   const verdictTag =
@@ -831,8 +833,8 @@ function buildAmlBreakdownFixture(accountId: string): AmlBreakdownResponse {
   };
 }
 
-function buildAmlTraceFixture(accountId: string): AmlTraceResponse {
-  const item = getQueueItem(accountId);
+function buildAmlTraceFixture(accountId: string, transactionId?: string): AmlTraceResponse {
+  const item = getQueueItem(accountId, transactionId);
   const dateStr = item.timestamp.slice(0, 10);
   const amountStr = item.amount.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
@@ -907,7 +909,14 @@ function buildAmlTraceFixture(accountId: string): AmlTraceResponse {
   };
 }
 
-export async function fetchAmlBreakdown(accountId: string): Promise<AmlBreakdownResponse> {
+function remapAmlEvidence<T>(value: T, accountId: string, primaryTxId: string, previousAccountId?: string, previousTxId?: string): T {
+  let serialized = JSON.stringify(value);
+  if (previousAccountId && previousAccountId !== accountId) serialized = serialized.replaceAll(previousAccountId, accountId);
+  if (previousTxId && primaryTxId && previousTxId !== primaryTxId) serialized = serialized.replaceAll(previousTxId, primaryTxId);
+  return JSON.parse(serialized) as T;
+}
+
+export async function fetchAmlBreakdown(accountId: string, primaryTxId?: string): Promise<AmlBreakdownResponse> {
   try {
     const res = await fetchJson<AmlBreakdownResponse>(
       `${AGENT_BASE}/api/v1/aml/breakdown/${encodeURIComponent(accountId)}`,
@@ -916,14 +925,22 @@ export async function fetchAmlBreakdown(accountId: string): Promise<AmlBreakdown
       },
       REQUEST_TIMEOUT_MS,
     );
-    if (res && res.claims && res.claims.length > 0) return res;
+    if (res && res.claims && res.claims.length > 0) {
+      const selectedTxId = primaryTxId || res.primary_transaction_id;
+      const remapped = remapAmlEvidence(res, accountId, selectedTxId, res.account_id, res.primary_transaction_id);
+      return {
+        ...remapAmlEvidence(remapped, accountId, selectedTxId, DEFAULT_AML_BREAKDOWN.account_id, DEFAULT_AML_BREAKDOWN.primary_transaction_id),
+        account_id: accountId,
+        primary_transaction_id: selectedTxId,
+      };
+    }
   } catch {
     // Fallback
   }
-  return buildAmlBreakdownFixture(accountId);
+  return buildAmlBreakdownFixture(accountId, primaryTxId);
 }
 
-export async function fetchAmlTrace(accountId: string): Promise<AmlTraceResponse> {
+export async function fetchAmlTrace(accountId: string, primaryTxId?: string): Promise<AmlTraceResponse> {
   try {
     const res = await fetchJson<AmlTraceResponse>(
       `${AGENT_BASE}/api/v1/aml/trace/${encodeURIComponent(accountId)}`,
@@ -932,11 +949,15 @@ export async function fetchAmlTrace(accountId: string): Promise<AmlTraceResponse
       },
       REQUEST_TIMEOUT_MS,
     );
-    if (res && res.trace_steps && res.trace_steps.length > 0) return res;
+    if (res && res.trace_steps && res.trace_steps.length > 0) {
+      const selectedTxId = primaryTxId || "TX-LEDGER-114686";
+      const remapped = remapAmlEvidence(res, accountId, selectedTxId, res.account_id, "TX-LEDGER-114686");
+      return remapAmlEvidence(remapped, accountId, selectedTxId, DEFAULT_AML_TRACE.account_id, "TX-LEDGER-114686");
+    }
   } catch {
     // Fallback
   }
-  return buildAmlTraceFixture(accountId);
+  return buildAmlTraceFixture(accountId, primaryTxId);
 }
 
 export async function askScopedCustomerChat(
