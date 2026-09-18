@@ -79,6 +79,13 @@ yarn-error.log*
 .pnpm-debug.log*
 .next/
 out/
+dist/
+dist-ssr/
+.output/
+.vinxi/
+.tanstack/
+.nitro/
+.wrangler/
 
 # OS & Editor Files
 .DS_Store
