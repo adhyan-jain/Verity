@@ -13,15 +13,22 @@
  * server instead, keeping keys server-side only).
  */
 
-const AGENT_BASE = import.meta.env.VITE_AGENT_API_URL ?? "http://localhost:8000";
-const FRAUD_BASE = import.meta.env.VITE_FRAUD_API_URL ?? "http://localhost:8001/api/v1/fraud";
-const LEDGER_BASE = import.meta.env.VITE_LEDGER_API_URL ?? "http://localhost:8002/api/v1/ledger";
-const TYPOLOGY_BASE =
-  import.meta.env.VITE_TYPOLOGY_API_URL ?? "http://localhost:8003/api/v1/typology";
-const FRAUD_API_KEY = import.meta.env.VITE_FRAUD_API_KEY ?? "";
-const LEDGER_API_KEY = import.meta.env.VITE_LEDGER_API_KEY ?? "";
-const TYPOLOGY_API_KEY = import.meta.env.VITE_TYPOLOGY_API_KEY ?? "";
-const AGENT_API_KEY = import.meta.env.VITE_AGENT_API_KEY ?? "";
+function resolveEngineUrl(envUrl: string | undefined, defaultPort: number, defaultPath: string = ""): string {
+  if (envUrl) return envUrl;
+  if (typeof window !== "undefined" && window.location.hostname && window.location.hostname !== "localhost") {
+    return `http://${window.location.hostname}:${defaultPort}${defaultPath}`;
+  }
+  return `http://localhost:${defaultPort}${defaultPath}`;
+}
+
+const AGENT_BASE = resolveEngineUrl(import.meta.env.VITE_AGENT_API_URL, 8000);
+const FRAUD_BASE = resolveEngineUrl(import.meta.env.VITE_FRAUD_API_URL, 8001, "/api/v1/fraud");
+const LEDGER_BASE = resolveEngineUrl(import.meta.env.VITE_LEDGER_API_URL, 8002, "/api/v1/ledger");
+const TYPOLOGY_BASE = resolveEngineUrl(import.meta.env.VITE_TYPOLOGY_API_URL, 8003, "/api/v1/typology");
+const FRAUD_API_KEY = import.meta.env.VITE_FRAUD_API_KEY ?? "dev-local-fraud-key";
+const LEDGER_API_KEY = import.meta.env.VITE_LEDGER_API_KEY ?? "dev-local-ledger-key";
+const TYPOLOGY_API_KEY = import.meta.env.VITE_TYPOLOGY_API_KEY ?? "dev-local-typology-key";
+const AGENT_API_KEY = import.meta.env.VITE_AGENT_API_KEY ?? "dev-local-agent-key";
 const HEALTH_TIMEOUT_MS = 6000;
 const REQUEST_TIMEOUT_MS = 15000;
 
