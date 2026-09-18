@@ -15,7 +15,8 @@
 const AGENT_BASE = import.meta.env.VITE_AGENT_API_URL ?? "http://localhost:8000";
 const FRAUD_BASE = import.meta.env.VITE_FRAUD_API_URL ?? "http://localhost:8001/api/v1/fraud";
 const LEDGER_BASE = import.meta.env.VITE_LEDGER_API_URL ?? "http://localhost:8002/api/v1/ledger";
-const TYPOLOGY_BASE = import.meta.env.VITE_TYPOLOGY_API_URL ?? "http://localhost:8003/api/v1/typology";
+const TYPOLOGY_BASE =
+  import.meta.env.VITE_TYPOLOGY_API_URL ?? "http://localhost:8003/api/v1/typology";
 const FRAUD_API_KEY = import.meta.env.VITE_FRAUD_API_KEY ?? "";
 const HEALTH_TIMEOUT_MS = 2500;
 const REQUEST_TIMEOUT_MS = 8000;
@@ -70,8 +71,21 @@ export type LedgerTimeline = {
 
 export type TypologyNetwork = {
   metadata: Record<string, unknown>;
-  nodes: { account_id: string; account_name: string; entity_type: string; risk_rating: string; tier: string }[];
-  edges: { id: string; from_account: string; to_account: string; amount: number; timestamp: string; raw_narration: string | null }[];
+  nodes: {
+    account_id: string;
+    account_name: string;
+    entity_type: string;
+    risk_rating: string;
+    tier: string;
+  }[];
+  edges: {
+    id: string;
+    from_account: string;
+    to_account: string;
+    amount: number;
+    timestamp: string;
+    raw_narration: string | null;
+  }[];
   ground_truth_flags?: unknown[];
 };
 
@@ -145,7 +159,11 @@ export async function investigateCase(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ case_id: caseId, transaction_id: transactionId, tier_origin: tierOrigin }),
+        body: JSON.stringify({
+          case_id: caseId,
+          transaction_id: transactionId,
+          tier_origin: tierOrigin,
+        }),
       },
       REQUEST_TIMEOUT_MS,
     );
@@ -155,7 +173,9 @@ export async function investigateCase(
 }
 
 /** Direct SHAP factor lookup against the fraud engine (real_card tier only). Null on any failure, including a missing API key. */
-export async function fetchShapExplanation(transactionId: string): Promise<FraudExplanation | null> {
+export async function fetchShapExplanation(
+  transactionId: string,
+): Promise<FraudExplanation | null> {
   if (!FRAUD_API_KEY) return null;
   try {
     return await fetchJson<FraudExplanation>(
@@ -171,7 +191,11 @@ export async function fetchShapExplanation(transactionId: string): Promise<Fraud
 /** First real account summary from the ledger engine, used to drive live ledger evidence views without hardcoding a bank account number. */
 export async function fetchFirstLedgerAccountId(): Promise<string | null> {
   try {
-    const accounts = await fetchJson<{ account_id: string }[]>(`${LEDGER_BASE}/accounts`, {}, REQUEST_TIMEOUT_MS);
+    const accounts = await fetchJson<{ account_id: string }[]>(
+      `${LEDGER_BASE}/accounts`,
+      {},
+      REQUEST_TIMEOUT_MS,
+    );
     return accounts[0]?.account_id ?? null;
   } catch {
     return null;
@@ -180,7 +204,11 @@ export async function fetchFirstLedgerAccountId(): Promise<string | null> {
 
 export async function fetchLiveTimeline(accountId: string): Promise<LedgerTimeline | null> {
   try {
-    return await fetchJson<LedgerTimeline>(`${LEDGER_BASE}/timeline/${encodeURIComponent(accountId)}`, {}, REQUEST_TIMEOUT_MS);
+    return await fetchJson<LedgerTimeline>(
+      `${LEDGER_BASE}/timeline/${encodeURIComponent(accountId)}`,
+      {},
+      REQUEST_TIMEOUT_MS,
+    );
   } catch {
     return null;
   }
@@ -213,7 +241,7 @@ export async function askCounterfactualOrChat(
   const amountMatch = wantsCounterfactual ? query.match(AMOUNT_PATTERN) : null;
 
   if (wantsCounterfactual && amountMatch) {
-    const overrideAmount = Number(amountMatch[1].replace(/,/g, ""));
+    const overrideAmount = Number((amountMatch[1] ?? "0").replace(/,/g, ""));
     const result = await fetchJson<{
       original_risk_score: number;
       recalculated_risk_score: number;
@@ -225,7 +253,10 @@ export async function askCounterfactualOrChat(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transaction_id: transactionId, parameter_overrides: { Amount: overrideAmount } }),
+        body: JSON.stringify({
+          transaction_id: transactionId,
+          parameter_overrides: { Amount: overrideAmount },
+        }),
       },
       REQUEST_TIMEOUT_MS,
     );
