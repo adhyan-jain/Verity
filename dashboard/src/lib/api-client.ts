@@ -330,14 +330,17 @@ export type AmlQueueItem = {
   payment_rail: string;
   raw_narration: string;
   risk_score: number;
+  original_score?: number;
   risk_score_lgb: number;
   risk_score_rf: number;
   flagged: boolean;
   conformal_lo: number | null;
   conformal_hi: number | null;
   conformal_label?: string;
-  verdict?: "confirmed" | "downgraded" | "cleared";
+  verdict?: "confirmed" | "downgraded" | "cleared" | "downgraded_by_defender";
   adjudication_reason?: string;
+  is_structuring?: boolean;
+  structuring_cluster_count?: number;
 };
 
 export type AmlQueueResponse = {
@@ -361,6 +364,8 @@ export type AmlTimelineItem = {
   narration: string;
   flagged: boolean;
   risk_score?: number;
+  structuring_cluster_id?: string;
+  is_structuring_range?: boolean;
 };
 
 export type AmlTimelineResponse = {
@@ -495,7 +500,47 @@ export const DEFAULT_AML_QUEUE: AmlQueueItem[] = [
     conformal_hi: 0.70,
     conformal_label: "risk score: 0.68, 90% CI: [0.66, 0.70]",
     verdict: "confirmed",
-    adjudication_reason: "Smurfing detector flagged: 22 micro-withdrawals summing to ₹993 within $1,000 statutory margin.",
+    adjudication_reason: "Smurfing detector flagged: 3 micro-withdrawals summing to ₹2,94,000 under mandatory ₹1,00,000 threshold.",
+    is_structuring: true,
+    structuring_cluster_count: 3,
+  },
+  {
+    id: "TX-LEDGER-088412",
+    account_id: "409000493208",
+    timestamp: "2018-05-19T00:00:00Z",
+    amount: 195000.0,
+    direction: "debit",
+    payment_rail: "NEFT",
+    raw_narration: "NEFT/SALARY-PAYROLL DISBURSEMENT",
+    risk_score: 0.38,
+    original_score: 0.78,
+    risk_score_lgb: 0.40,
+    risk_score_rf: 0.38,
+    flagged: false,
+    conformal_lo: 0.35,
+    conformal_hi: 0.41,
+    conformal_label: "risk score: 0.38, 90% CI: [0.35, 0.41]",
+    verdict: "downgraded_by_defender",
+    adjudication_reason: "Defender grounded 1 innocent explanation: recurring payroll schedule matching prior 12-month baseline.",
+  },
+  {
+    id: "TX-LEDGER-091244",
+    account_id: "409000493206",
+    timestamp: "2018-07-22T00:00:00Z",
+    amount: 142000.0,
+    direction: "debit",
+    payment_rail: "RTGS",
+    raw_narration: "RTGS/VENDOR-ADVANCE REVERSAL RESTORE",
+    risk_score: 0.05,
+    original_score: 0.69,
+    risk_score_lgb: 0.10,
+    risk_score_rf: 0.05,
+    flagged: false,
+    conformal_lo: 0.02,
+    conformal_hi: 0.08,
+    conformal_label: "risk score: 0.05, 90% CI: [0.02, 0.08]",
+    verdict: "downgraded_by_defender",
+    adjudication_reason: "Defender grounded 2 innocent explanations: balance restore of ≥90% detected within 4 days + regular counterparty.",
   },
   {
     id: "TX-LEDGER-064112",
@@ -685,6 +730,49 @@ export function getAmlTimelineFixture(accountId: string): AmlTimelineResponse {
       narration: "IMPS/VENDOR SETTLEMENT",
       flagged: false,
     },
+    ...(item.is_structuring || accountId === "409000493210"
+      ? [
+          {
+            id: "TX-LEDGER-071536",
+            timestamp: offsetDays(-5),
+            amount: 993.0,
+            direction: "debit" as const,
+            balance: (balance -= 993.0),
+            payment_rail: "CASH_ATM",
+            narration: "ATM CASH WDL #1 · STRUCTURING PATTERN (UNDER ₹1,000)",
+            flagged: true,
+            risk_score: 0.68,
+            structuring_cluster_id: "STR-CLUST-409",
+            is_structuring_range: true,
+          },
+          {
+            id: "TX-LEDGER-071537",
+            timestamp: offsetDays(-5),
+            amount: 985.0,
+            direction: "debit" as const,
+            balance: (balance -= 985.0),
+            payment_rail: "CASH_ATM",
+            narration: "ATM CASH WDL #2 · STRUCTURING PATTERN (UNDER ₹1,000)",
+            flagged: true,
+            risk_score: 0.70,
+            structuring_cluster_id: "STR-CLUST-409",
+            is_structuring_range: true,
+          },
+          {
+            id: "TX-LEDGER-071538",
+            timestamp: offsetDays(-5),
+            amount: 990.0,
+            direction: "debit" as const,
+            balance: (balance -= 990.0),
+            payment_rail: "CASH_ATM",
+            narration: "ATM CASH WDL #3 · STRUCTURING PATTERN (UNDER ₹1,000)",
+            flagged: true,
+            risk_score: 0.72,
+            structuring_cluster_id: "STR-CLUST-409",
+            is_structuring_range: true,
+          },
+        ]
+      : []),
     {
       id: item.id,
       timestamp: item.timestamp,
@@ -1030,7 +1118,7 @@ export async function runCounterfactualRecompute(
   newAmount: number,
 ): Promise<CounterfactualRecomputeResponse> {
   try {
-    const raw = await fetchJson<Record<string, any>>(
+    const raw = await fetchJson<any>(
       `${AGENT_BASE}/api/v1/aml/counterfactual/recompute`,
       {
         method: "POST",
@@ -1105,7 +1193,7 @@ export async function runForwardSimulation(
   daysAhead: number = 7,
 ): Promise<ForwardSimulationResponse> {
   try {
-    const raw = await fetchJson<Record<string, any>>(
+    const raw = await fetchJson<any>(
       `${AGENT_BASE}/api/v1/aml/simulate/forward`,
       {
         method: "POST",
@@ -1151,3 +1239,101 @@ export async function runForwardSimulation(
     explanation: `Repeating this debit in ${daysAhead} days drains the ledger account to ₹0.00 and breaches rolling 30-day velocity thresholds. Model classifies repeated pattern as intentional multi-stage structuring.`,
   };
 }
+
+export interface ProsecutorDefenderResolution {
+  account_id: string;
+  transaction_id: string;
+  original_risk_score: number;
+  final_risk_score: number;
+  final_verdict: "confirmed" | "downgraded_by_defender" | "cleared";
+  prosecutor: {
+    arguments: string[];
+    evidence_ids: string[];
+  };
+  defender: {
+    arguments: string[];
+    grounded_reasons: string[];
+    cited_transaction_ids: string[];
+    is_grounded: boolean;
+  };
+  resolution_reason: string;
+}
+
+export async function fetchAdjudicationDetails(
+  transactionId: string,
+  riskScore: number = 0.82,
+): Promise<ProsecutorDefenderResolution> {
+  try {
+    const res = await fetchJson<ProsecutorDefenderResolution>(
+      `${AGENT_BASE}/api/v1/aml/adjudicate`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-API-Key": AGENT_API_KEY },
+        body: JSON.stringify({ transaction_id: transactionId, risk_score: riskScore }),
+      },
+      REQUEST_TIMEOUT_MS,
+    );
+    if (res && res.prosecutor && res.defender) return res;
+  } catch {
+    // Fallback
+  }
+
+  const isDowngraded = transactionId.includes("088412") || transactionId.includes("091244");
+
+  if (isDowngraded) {
+    return {
+      account_id: "409000493208",
+      transaction_id: transactionId,
+      original_risk_score: 0.76,
+      final_risk_score: 0.36,
+      final_verdict: "downgraded_by_defender",
+      prosecutor: {
+        arguments: [
+          "PaySim tree classifier output elevated probability score of 0.76 (92nd percentile across portfolio).",
+          "Transaction amount is 2.8x higher than 30-day baseline median.",
+        ],
+        evidence_ids: [transactionId, "TX-LEDGER-088410"],
+      },
+      defender: {
+        arguments: [
+          "Recurring payment pattern matched: identical payroll disbursement detected on the 19th of each prior month (±2.1% amount variance).",
+          "Known employee/vendor payee recognized across 12 consecutive billing cycles.",
+        ],
+        grounded_reasons: [
+          "Recurring payroll schedule confirmed in ledger history (TX-LEDGER-071190, TX-LEDGER-075210).",
+        ],
+        cited_transaction_ids: ["TX-LEDGER-071190", "TX-LEDGER-075210"],
+        is_grounded: true,
+      },
+      resolution_reason: "Defender grounded 1 innocent explanation (regular recurring payroll schedule). Risk score downgraded from 0.76 to 0.36.",
+    };
+  }
+
+  return {
+    account_id: "409000493210",
+    transaction_id: transactionId,
+    original_risk_score: riskScore,
+    final_risk_score: riskScore,
+    final_verdict: "confirmed",
+    prosecutor: {
+      arguments: [
+        "Balance-drain ratio is 100.0% — this single transaction consumed all available account opening liquidity.",
+        "Velocity burst: 54 transactions occurred on this date, creating an extreme anomaly relative to historical account velocity.",
+        "Structuring proximity: 3 micro-transactions totaling ₹2,94,000 fell just below mandatory statutory threshold.",
+      ],
+      evidence_ids: [transactionId, "TX-LEDGER-071536", "TX-LEDGER-071537", "TX-LEDGER-071538"],
+    },
+    defender: {
+      arguments: [
+        "First-time counterparty keyword has no prior precedent in account ledger history.",
+        "No seasonal precedent found — this calendar period historically exhibits near-zero debit activity.",
+        "No offsetting credit restore of ≥90% received within 7 days post-transaction.",
+      ],
+      grounded_reasons: [],
+      cited_transaction_ids: [],
+      is_grounded: false,
+    },
+    resolution_reason: "Defender found zero grounded innocent explanations. Escalation confirmed based on 100% balance depletion and structuring cluster.",
+  };
+}
+

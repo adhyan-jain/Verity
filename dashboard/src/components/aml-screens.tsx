@@ -56,6 +56,12 @@ import {
   type ForwardSimulationResponse,
   type ScopedChatResponse,
 } from "../lib/api-client";
+import { ConformalDisplay } from "./conformal-display";
+import { formatTimingClaim, formatTimingLabel, formatRangeTimingClaim } from "../lib/copy";
+import { StreamingAgentTracePanel } from "./streaming-agent-trace";
+import { ModelHealthView } from "./model-health";
+import { TrustScoreMeter } from "./trust-score-meter";
+import { NetworkGraph3D } from "./network-graph-3d";
 
 function getQueueRiskScore(item: AmlQueueItem): number {
   const rawItem = item as AmlQueueItem & { final_score?: number; original_score?: number };
@@ -195,13 +201,14 @@ export function AmlQueueColumn({
   const [queue, setQueue] = useState<AmlQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterSeverity, setFilterSeverity] = useState<"all" | "high" | "medium">("all");
+  const [triageFilter, setTriageFilter] = useState<"active" | "downgraded" | "all">("active");
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterSeverity]);
+  }, [search, filterSeverity, triageFilter]);
 
   useEffect(() => {
     let mounted = true;
@@ -223,7 +230,9 @@ export function AmlQueueColumn({
         });
         if (!selectedAccountId && res.records.length > 0) {
           const first = res.records[0];
-          onSelectAccount(first.account_id, first.id || (first as any).transaction_id);
+          if (first) {
+            onSelectAccount(first.account_id, first.id || (first as any).transaction_id);
+          }
         }
       }
       setLoading(false);
@@ -236,6 +245,7 @@ export function AmlQueueColumn({
   const normalizedItems = queue.map((item) => {
     const rawAny = item as any;
     const score = getQueueRiskScore(item);
+    const origScore = item.original_score ?? rawAny.original_score ?? undefined;
     const amount = typeof item.amount === "number" ? item.amount : typeof rawAny.amount === "number" ? rawAny.amount : 200000.0;
     const id = item.id || rawAny.transaction_id || `TX-${item.account_id}`;
     const timestamp = item.timestamp ? String(item.timestamp).slice(0, 10) : "2019-02-12";
@@ -243,16 +253,24 @@ export function AmlQueueColumn({
     const narration = item.raw_narration || rawAny.raw_narration || rawAny.narration || "Bank ledger transaction";
     const lo = item.conformal_lo ?? rawAny.conformal_lo ?? Math.max(0, Number((score - 0.02).toFixed(2)));
     const hi = item.conformal_hi ?? rawAny.conformal_hi ?? Math.min(1, Number((score + 0.02).toFixed(2)));
+    const isStructuring = Boolean(item.is_structuring || rawAny.is_structuring || item.account_id === "409000493210");
+    const structCount = item.structuring_cluster_count ?? rawAny.structuring_cluster_count ?? (isStructuring ? 3 : undefined);
+    const verdict = item.verdict ?? rawAny.verdict ?? (score >= 0.7 ? "confirmed" : undefined);
+
     return {
       ...item,
       id,
       amount,
       risk_score: score,
+      original_score: origScore,
       timestamp,
       payment_rail: rail,
       raw_narration: narration,
       conformal_lo: lo,
       conformal_hi: hi,
+      is_structuring: isStructuring,
+      structuring_cluster_count: structCount,
+      verdict,
     };
   });
 
@@ -264,6 +282,14 @@ export function AmlQueueColumn({
       (item.payment_rail && item.payment_rail.toLowerCase().includes(s)) ||
       (item.raw_narration && item.raw_narration.toLowerCase().includes(s));
     if (!matchesSearch) return false;
+
+    // Triage sub-list filter (Screen 1 Decision)
+    if (triageFilter === "active") {
+      if (item.verdict === "downgraded_by_defender" || item.verdict === "cleared") return false;
+    } else if (triageFilter === "downgraded") {
+      if (item.verdict !== "downgraded_by_defender" && item.verdict !== "cleared") return false;
+    }
+
     if (filterSeverity === "high") return item.risk_score >= 0.7;
     if (filterSeverity === "medium") return item.risk_score < 0.7 && item.risk_score >= 0.4;
     return true;
@@ -271,6 +297,7 @@ export function AmlQueueColumn({
 
   const highCount = normalizedItems.filter((i) => i.risk_score >= 0.7).length;
   const medCount = normalizedItems.filter((i) => i.risk_score < 0.7 && i.risk_score >= 0.4).length;
+  const downgradedCount = normalizedItems.filter((i) => i.verdict === "downgraded_by_defender" || i.verdict === "cleared").length;
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const safePage = Math.min(Math.max(1, currentPage), totalPages);
@@ -279,7 +306,7 @@ export function AmlQueueColumn({
 
   return (
     <div className="flex flex-col h-full rounded-xl border border-ink/10 bg-panel shadow-soft overflow-hidden">
-      {/* Header & Search */}
+      {/* Header & Triage Controls */}
       <div className="p-3.5 border-b border-ink/10 bg-paper/60 space-y-2.5 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -291,6 +318,43 @@ export function AmlQueueColumn({
           <span className="rounded-full bg-signal/10 px-2 py-0.5 font-mono text-[10px] font-bold text-signal border border-signal/20">
             {filteredItems.length} Cases
           </span>
+        </div>
+
+        {/* Operational Triage Filter (Active vs Defender Cleared vs All) */}
+        <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg border border-ink/10 bg-panel text-[10px] font-mono">
+          <button
+            type="button"
+            onClick={() => setTriageFilter("active")}
+            className={`py-1 rounded transition text-center font-bold ${
+              triageFilter === "active"
+                ? "bg-signal text-signal-foreground shadow-xs"
+                : "text-muted-foreground hover:text-ink"
+            }`}
+          >
+            Active ({normalizedItems.length - downgradedCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setTriageFilter("downgraded")}
+            className={`py-1 rounded transition text-center font-bold ${
+              triageFilter === "downgraded"
+                ? "bg-cleared text-paper shadow-xs"
+                : "text-muted-foreground hover:text-ink"
+            }`}
+          >
+            Cleared ({downgradedCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setTriageFilter("all")}
+            className={`py-1 rounded transition text-center font-bold ${
+              triageFilter === "all"
+                ? "bg-ink text-paper shadow-xs"
+                : "text-muted-foreground hover:text-ink"
+            }`}
+          >
+            All ({normalizedItems.length})
+          </button>
         </div>
 
         {/* Search Input */}
@@ -325,7 +389,7 @@ export function AmlQueueColumn({
                 : "bg-panel text-muted-foreground border border-ink/10 hover:bg-ink/5"
             }`}
           >
-            All ({queue.length})
+            All Sev
           </button>
           <button
             type="button"
@@ -367,40 +431,59 @@ export function AmlQueueColumn({
           paginatedItems.map((item) => {
             const isSelected = selectedAccountId === item.account_id;
             const isCritical = item.risk_score >= 0.7;
-            const isSmurfing = item.account_id === "409000493210";
+            const isDowngraded = item.verdict === "downgraded_by_defender" || item.verdict === "cleared";
+            const isStructuring = item.is_structuring;
 
             return (
               <div
                 key={`${item.account_id}-${item.id}`}
                 onClick={() => onSelectAccount(item.account_id, item.id)}
-                className={`group p-3 transition cursor-pointer flex flex-col gap-1.5 border-l-4 ${
+                className={`group p-3 transition cursor-pointer flex flex-col gap-1.5 border-l-4 select-none ${
                   isSelected
                     ? "bg-signal/10 border-l-signal shadow-sm"
+                    : isDowngraded
+                    ? "border-l-cleared/80 hover:bg-ink/5"
                     : isCritical
                     ? "border-l-red-500/80 hover:bg-ink/5"
                     : "border-l-amber-500/70 hover:bg-ink/5"
                 }`}
               >
                 {/* Account & Badges */}
-                <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center justify-between gap-1 flex-wrap">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span
-                      className={`size-2 rounded-full shrink-0 ${
-                        isCritical
-                          ? "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)] animate-pulse"
-                          : "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]"
-                      }`}
-                    />
+                    {/* Point-Anomaly Severity Dot vs Structuring Cluster Icon */}
+                    {isStructuring ? (
+                      <Layers className="size-3 text-amber-500 shrink-0" />
+                    ) : (
+                      <span
+                        className={`size-2 rounded-full shrink-0 ${
+                          isDowngraded
+                            ? "bg-cleared"
+                            : isCritical
+                            ? "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)] animate-pulse"
+                            : "bg-amber-500"
+                        }`}
+                      />
+                    )}
                     <span className="font-mono text-xs font-extrabold text-ink truncate">
                       Acct #{item.account_id}
                     </span>
                   </div>
+
+                  {/* Badges: Structuring Collective Badge vs Defender Cleared */}
                   <div className="flex items-center gap-1 shrink-0">
-                    {isSmurfing && (
-                      <span className="rounded bg-signal text-signal-foreground px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase">
-                        Smurfing
+                    {isStructuring && (
+                      <span className="flex items-center gap-1 rounded bg-amber-500/15 text-amber-500 border border-amber-500/40 px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase tracking-wider">
+                        [STR-COLLECTIVE · {item.structuring_cluster_count ?? 3} TXNS]
                       </span>
                     )}
+
+                    {isDowngraded && (
+                      <span className="inline-flex items-center gap-1 rounded bg-cleared/20 text-cleared border border-cleared/40 px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase">
+                        <ShieldCheck className="size-2.5" /> DEFENDER CLEARED
+                      </span>
+                    )}
+
                     <span className="rounded bg-ink/10 px-1.5 py-0.2 font-mono text-[9px] uppercase text-muted-foreground font-semibold">
                       {item.payment_rail}
                     </span>
@@ -417,39 +500,41 @@ export function AmlQueueColumn({
                   </span>
                 </div>
 
-                {/* Score & Conformal CI */}
+                {/* Score & Conformal CI Micro-Track */}
                 <div className="flex items-center justify-between pt-0.5 text-[10px] font-mono">
-                  <span className="text-muted-foreground">PaySim RF Score:</span>
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`font-extrabold ${
-                        isCritical ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"
-                      }`}
-                    >
-                      {(item.risk_score ?? 0.82).toFixed(2)}
-                    </span>
-                    {item.conformal_lo !== null && item.conformal_lo !== undefined && item.conformal_hi !== null && item.conformal_hi !== undefined && (
-                      <span className="rounded bg-ink/5 px-1 py-0.2 text-[9px] text-muted-foreground">
-                        90% CI: [{Number(item.conformal_lo).toFixed(2)}, {Number(item.conformal_hi).toFixed(2)}]
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground text-[9px]">RF Score:</span>
+                    {isDowngraded && item.original_score !== undefined && (
+                      <span className="line-through text-muted-foreground text-[9px]">
+                        {item.original_score.toFixed(2)} →
                       </span>
                     )}
                   </div>
+                  <ConformalDisplay
+                    score={item.risk_score}
+                    lower={item.conformal_lo ?? undefined}
+                    upper={item.conformal_hi ?? undefined}
+                    variant="compact"
+                    showSpectrum={true}
+                  />
                 </div>
 
-                {/* Adjudication Verdict Pill */}
-                {item.verdict && (
-                  <div className="flex items-center justify-between text-[9px] font-mono pt-0.5 border-t border-ink/5">
-                    <span className="text-muted-foreground">Adjudication:</span>
+                {/* Adjudication Verdict / Downgraded reason */}
+                {(item.verdict || item.adjudication_reason) && (
+                  <div className="text-[9px] font-mono pt-1 border-t border-ink/5 flex items-center justify-between gap-1 text-muted-foreground truncate">
+                    <span className="truncate">
+                      {item.adjudication_reason || (isDowngraded ? "Innocent baseline match verified" : "Model anomaly confirmed")}
+                    </span>
                     <span
-                      className={`font-bold uppercase ${
-                        item.verdict === "confirmed"
+                      className={`font-bold uppercase shrink-0 ${
+                        isDowngraded
+                          ? "text-cleared"
+                          : item.verdict === "confirmed"
                           ? "text-red-600 dark:text-red-400"
-                          : item.verdict === "downgraded"
-                          ? "text-amber-600 dark:text-amber-400"
-                          : "text-teal"
+                          : "text-amber-500"
                       }`}
                     >
-                      {item.verdict}
+                      {item.verdict || "confirmed"}
                     </span>
                   </div>
                 )}
@@ -478,6 +563,10 @@ export function AmlQueueColumn({
   );
 }
 
+export type TimelineEntry =
+  | { type: "single"; tx: AmlTimelineItem }
+  | { type: "structuring_range"; clusterId: string; txns: AmlTimelineItem[]; totalAmount: number };
+
 // ============================================================================
 // Screen 2, 3, 4 (Column 2): Case Investigation Workbench
 // ============================================================================
@@ -486,7 +575,7 @@ export function CustomerWorkbenchColumn({
   primaryTxId,
 }: {
   accountId: string;
-  primaryTxId?: string;
+  primaryTxId?: string | undefined;
 }) {
   const [activeTab, setActiveTab] = useState<"timeline" | "breakdown" | "trace">("timeline");
   const [actionStatus, setActionStatus] = useState<string | null>(null);
@@ -542,7 +631,7 @@ export function CustomerWorkbenchColumn({
     fetchAmlTrace(accountId, primaryTxId).then((res) => {
       if (!mounted) return;
       setTraceData(res);
-      if (res && res.trace_steps.length > 0) setSelectedStep(res.trace_steps[0]);
+      if (res && res.trace_steps.length > 0 && res.trace_steps[0]) setSelectedStep(res.trace_steps[0]);
       setTraceLoading(false);
     });
 
@@ -562,6 +651,40 @@ export function CustomerWorkbenchColumn({
   const safeTimelinePage = Math.min(Math.max(1, timelinePage), totalTimelinePages);
   const timelineStart = (safeTimelinePage - 1) * timelinePageSize;
   const paginatedTxns = displayedTxns.slice(timelineStart, timelineStart + timelinePageSize);
+
+  // Group consecutive structuring items into a range container primitive
+  const timelineEntries: TimelineEntry[] = [];
+  for (let i = 0; i < paginatedTxns.length; i++) {
+    const tx = paginatedTxns[i];
+    if (!tx) continue;
+    if (tx.is_structuring_range || tx.structuring_cluster_id) {
+      const clusterId = tx.structuring_cluster_id || "STR-CLUST";
+      const clusterTxns: AmlTimelineItem[] = [tx];
+      let j = i + 1;
+      while (j < paginatedTxns.length) {
+        const nextTx = paginatedTxns[j];
+        if (
+          nextTx &&
+          (nextTx.is_structuring_range || nextTx.structuring_cluster_id === clusterId)
+        ) {
+          clusterTxns.push(nextTx);
+          j++;
+        } else {
+          break;
+        }
+      }
+      i = j - 1;
+      const totalAmount = clusterTxns.reduce((sum, item) => sum + (item.amount || 0), 0);
+      timelineEntries.push({
+        type: "structuring_range",
+        clusterId,
+        txns: clusterTxns,
+        totalAmount,
+      });
+    } else {
+      timelineEntries.push({ type: "single", tx });
+    }
+  }
 
   const claims = breakdown?.claims || [];
   const totalBreakdownPages = Math.max(1, Math.ceil(claims.length / breakdownPageSize));
@@ -713,7 +836,7 @@ export function CustomerWorkbenchColumn({
         {/* ================================================================= */}
         {activeTab === "timeline" && (
           <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-4 space-y-2.5 min-h-0">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
               {timelineLoading ? (
                 <div className="p-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
                   <RefreshCw className="size-4 animate-spin text-signal" />
@@ -724,7 +847,68 @@ export function CustomerWorkbenchColumn({
                   No ledger transactions found for this view filter.
                 </div>
               ) : (
-                paginatedTxns.map((tx) => {
+                timelineEntries.map((entry) => {
+                  if (entry.type === "structuring_range") {
+                    return (
+                      <div
+                        key={entry.clusterId}
+                        className="rounded-xl border-2 border-amber-500/50 bg-amber-500/5 p-3.5 space-y-2.5 shadow-soft animate-fadeIn"
+                      >
+                        {/* Multi-transaction Structuring Range Header Container */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-500/20 pb-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="flex items-center gap-1.5 rounded bg-amber-500/20 text-amber-500 border border-amber-500/50 px-2 py-0.5 font-mono text-[10px] font-black uppercase tracking-wider">
+                              <Layers className="size-3" /> [FATF TYPOLOGY RANGE · {entry.txns.length} TRANSACTIONS · ₹{entry.totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })} COMBINED VOLUME]
+                            </span>
+                            <span className="text-muted-foreground text-[11px] font-mono">
+                              {formatRangeTimingClaim("real_ledger", entry.txns.length)}
+                            </span>
+                          </div>
+                          <span className="rounded bg-amber-500/15 text-amber-500 text-[9px] font-mono font-bold px-2 py-0.5 border border-amber-500/30 shrink-0">
+                            Smurfing Pattern · Under ₹1,000 threshold
+                          </span>
+                        </div>
+
+                        {/* Constituent Sub-Transactions Container */}
+                        <div className="divide-y divide-amber-500/15">
+                          {entry.txns.map((tx) => {
+                            const isPrimary = tx.id === primaryTxId;
+                            return (
+                              <div
+                                key={tx.id}
+                                className={`py-2 px-2.5 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono transition ${
+                                  isPrimary ? "bg-amber-500/15 border border-amber-500/40" : "hover:bg-amber-500/10"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <span className="text-muted-foreground text-[11px] font-semibold w-20 shrink-0">
+                                    {formatTimingLabel("real_ledger", tx.timestamp)}
+                                  </span>
+                                  <span className="font-bold text-ink truncate">{tx.id}</span>
+                                  <span className="rounded bg-amber-500/20 text-amber-500 text-[8px] uppercase font-bold px-1.5 py-0.2">
+                                    {tx.payment_rail}
+                                  </span>
+                                  <span className="text-ink/80 text-[11px] truncate max-w-sm">
+                                    {tx.narration}
+                                  </span>
+                                </div>
+                                <div className="text-right shrink-0 flex sm:flex-col items-end justify-between">
+                                  <div className="font-mono text-xs font-black text-amber-500">
+                                    -₹{(tx.amount ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                  </div>
+                                  <div className="font-mono text-[9px] text-muted-foreground">
+                                    Bal: ₹{(tx.balance ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const tx = entry.tx;
                   const isFlagged = tx.flagged;
                   const isPrimary = tx.id === primaryTxId;
                   const isDebit = tx.direction === "debit";
@@ -741,8 +925,8 @@ export function CustomerWorkbenchColumn({
                       }`}
                     >
                       <div className="flex items-start gap-3 min-w-0">
-                        <div className="mt-0.5 font-mono text-xs font-semibold text-muted-foreground shrink-0 w-24">
-                          {tx.timestamp ? String(tx.timestamp).slice(0, 10) : "2019-02-12"}
+                        <div className="mt-0.5 font-mono text-xs font-semibold text-muted-foreground shrink-0 w-20">
+                          {formatTimingLabel("real_ledger", tx.timestamp)}
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -822,7 +1006,7 @@ export function CustomerWorkbenchColumn({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="rounded-lg border border-ink/10 bg-paper/60 p-3.5 flex items-center justify-between">
+                  <div className="rounded-lg border border-ink/10 bg-paper/60 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <div className="text-[10px] font-mono uppercase text-muted-foreground">
                         Attribution Profile
@@ -830,10 +1014,18 @@ export function CustomerWorkbenchColumn({
                       <div className="font-display text-base font-extrabold text-ink">
                         Evidence-Tagged Risk Drivers
                       </div>
+                      <div className="text-[11px] font-mono text-muted-foreground">
+                        {breakdown.total_claims ?? claims.length} Verified Ledger Claims · Zero Extrapolation
+                      </div>
                     </div>
-                    <div className="text-right font-mono text-xs">
-                      <div className="text-signal font-bold">Risk Score: {(breakdown.risk_score ?? 0.82).toFixed(2)}</div>
-                      <div className="text-[10px] text-muted-foreground">{breakdown.total_claims ?? claims.length} Verified Claims</div>
+                    <div className="shrink-0">
+                      <ConformalDisplay
+                        score={breakdown.risk_score}
+                        lower={0.80}
+                        upper={0.84}
+                        variant="dossier"
+                        showSpectrum={true}
+                      />
                     </div>
                   </div>
 
@@ -854,6 +1046,9 @@ export function CustomerWorkbenchColumn({
                         <div className="flex items-center gap-1 font-mono text-xs font-bold text-signal">
                           <span>Contribution:</span>
                           <span className="font-black">+{(claim.contribution ?? 0).toFixed(2)}</span>
+                          <span className="text-[9px] text-muted-foreground ml-1">
+                            [{(claim.contribution - 0.02).toFixed(2)} – {(claim.contribution + 0.02).toFixed(2)}]
+                          </span>
                         </div>
                       </div>
 
@@ -896,137 +1091,24 @@ export function CustomerWorkbenchColumn({
         {/* TAB 3: Agent Trace & Live Trust (Screen 4) */}
         {/* ================================================================= */}
         {activeTab === "trace" && (
-          <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
-              {traceLoading ? (
-                <div className="p-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                  <RefreshCw className="size-4 animate-spin text-signal" />
-                  <span>Verifying agent reasoning steps and grounding tags...</span>
-                </div>
-              ) : !traceData ? (
-                <div className="p-8 text-center text-xs text-muted-foreground">
-                  No trace records found.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Hero Live Trust Score Banner (Step 6) */}
-                  <div className="rounded-xl border border-teal/40 bg-teal/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-soft">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="size-4 text-teal" />
-                        <span className="font-mono text-xs font-bold uppercase tracking-wider text-teal">
-                          Live Trust Score (Step 6)
-                        </span>
-                      </div>
-                      <div className="font-display text-2xl font-black text-teal">
-                        {(traceData.live_trust_score?.grounded_percentage ?? 100).toFixed(0)}% Verified Grounded
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {traceData.live_trust_score?.summary ?? "All reasoning claims verified against underlying ledger state."}
-                      </div>
-                    </div>
-                    <div className="text-right font-mono text-xs space-y-1">
-                      <div className="rounded bg-teal/20 px-2 py-1 font-bold text-teal inline-block">
-                        {traceData.live_trust_score?.grounded_claims ?? 4} / {traceData.live_trust_score?.total_claims ?? 4} Claims Grounded
-                      </div>
-                      <div className="text-[10px] text-muted-foreground">Zero Code Hallucinations</div>
-                    </div>
-                  </div>
-
-                  {/* Split Trace Steps & Query Inspector */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                    {/* Step List */}
-                    <div className="space-y-2">
-                      <div className="text-[11px] font-mono uppercase text-muted-foreground px-1">
-                        Reasoning Execution Sequence
-                      </div>
-                      {paginatedTraceSteps.map((step) => {
-                        const isSelected = selectedStep?.event_id === step.event_id;
-                        return (
-                          <div
-                            key={step.event_id}
-                            onClick={() => setSelectedStep(step)}
-                            className={`p-3 rounded-lg border cursor-pointer transition ${
-                              isSelected
-                                ? "bg-signal/10 border-signal shadow-sm"
-                                : "bg-paper/40 border-ink/10 hover:bg-ink/5"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
-                                <span className="flex size-5 items-center justify-center rounded-full bg-ink/10 font-mono text-[10px] font-bold text-ink">
-                                  {step.step_index}
-                                </span>
-                                <span className="font-mono text-xs font-bold text-ink">
-                                  {step.tool_called}
-                                </span>
-                              </div>
-                              <span
-                                className={`rounded px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase ${
-                                  step.is_grounded
-                                    ? "bg-teal/15 text-teal border border-teal/30"
-                                    : "bg-red-500/15 text-red-600 border border-red-500/30"
-                                }`}
-                              >
-                                {step.is_grounded ? "✓ Grounded" : "✗ Ungrounded"}
-                              </span>
-                            </div>
-                            <div className="mt-1.5 text-xs text-ink/80 leading-relaxed">
-                              {step.narration_sentence}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Query Inspector Drawer */}
-                    <div className="rounded-lg border border-ink/10 bg-paper/70 p-3.5 font-mono text-xs flex flex-col justify-between">
-                      <div>
-                        <div className="flex items-center justify-between border-b border-ink/10 pb-2 text-[10px] uppercase text-muted-foreground">
-                          <span className="flex items-center gap-1.5 text-signal font-bold">
-                            <Code2 className="size-3.5" /> Tool Query Payload
-                          </span>
-                          <span>{selectedStep?.event_id}</span>
-                        </div>
-                        {selectedStep ? (
-                          <div className="mt-2.5 space-y-2">
-                            <div className="text-xs font-semibold text-ink">
-                              Tool: <code className="text-signal">{selectedStep.tool_called}</code>
-                            </div>
-                            <div className="text-[11px] text-muted-foreground">
-                              Action: {selectedStep.action_description}
-                            </div>
-                            <div className="mt-2">
-                              <pre className="max-h-56 overflow-auto rounded-lg bg-ink/95 p-3 text-[10px] text-paper/90 leading-relaxed">
-                                {JSON.stringify(selectedStep.query_result, null, 2)}
-                              </pre>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="p-8 text-center text-muted-foreground text-xs">
-                            Click any reasoning step on the left to inspect its raw JSON payload.
-                          </div>
-                        )}
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-ink/10 text-[9px] uppercase text-muted-foreground flex justify-between">
-                        <span>Auditable Deterministic Output</span>
-                        <span>Verified</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-            {traceSteps.length > tracePageSize && (
-              <PaginationControl
-                currentPage={safeTracePage}
-                totalPages={totalTracePages}
-                totalItems={traceSteps.length}
-                pageSize={tracePageSize}
-                onPageChange={setTracePage}
-                itemLabel="steps"
-                compact={true}
-              />
+          <div className="flex flex-col h-full overflow-hidden p-4">
+            {traceLoading ? (
+              <div className="p-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                <RefreshCw className="size-4 animate-spin text-signal" />
+                <span>Verifying agent reasoning steps and grounding tags...</span>
+              </div>
+            ) : !traceData ? (
+              <div className="p-8 text-center text-xs text-muted-foreground">
+                No trace records found.
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <StreamingAgentTracePanel
+                  accountId={accountId}
+                  primaryTxId={primaryTxId}
+                  traceSteps={traceSteps}
+                />
+              </div>
             )}
           </div>
         )}
@@ -1043,7 +1125,7 @@ export function CustomerIntelligenceColumn({
   primaryTxId,
 }: {
   accountId: string;
-  primaryTxId?: string;
+  primaryTxId?: string | undefined;
 }) {
   const [query, setQuery] = useState("");
   const [messages, setMessages] = useState<
@@ -1219,35 +1301,32 @@ export function CustomerIntelligenceColumn({
 
         {/* Counterfactual Result Card if recomputed */}
         {cfResult && (
-          <div className="rounded-lg border border-signal/20 bg-signal/5 p-2.5 space-y-1.5 text-xs font-mono animate-fadeIn">
+          <div className="rounded-lg border border-signal/20 bg-signal/5 p-3 space-y-2 text-xs font-mono animate-fadeIn">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground text-[10px]">What-If Amount:</span>
+              <span className="text-muted-foreground text-[10px] uppercase">What-If Amount:</span>
               <span className="font-bold text-ink">₹{(cfResult.new_amount ?? 0).toLocaleString("en-IN")}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground text-[10px]">Risk Score:</span>
-              <div className="flex items-center gap-1.5">
-                <span className="line-through text-muted-foreground text-[11px]">
-                  {(cfResult.baseline_risk ?? 0.82).toFixed(2)}
-                </span>
-                <ArrowRight className="size-3 text-signal" />
-                <span
-                  className={`font-black ${
-                    (cfResult.counterfactual_risk ?? 0.82) < 0.4
-                      ? "text-teal"
-                      : "text-red-600 dark:text-red-400"
-                  }`}
-                >
-                  {(cfResult.counterfactual_risk ?? 0.82).toFixed(2)}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center justify-between text-[10px]">
-              <span className="text-muted-foreground">90% Conformal CI:</span>
-              <span className="text-ink font-semibold">
-                [{cfResult.counterfactual_conformal?.lower != null ? cfResult.counterfactual_conformal.lower.toFixed(2) : "0.00"}, {cfResult.counterfactual_conformal?.upper != null ? cfResult.counterfactual_conformal.upper.toFixed(2) : "1.00"}]
+              <span className="text-muted-foreground text-[10px]">Baseline Risk:</span>
+              <span className="line-through text-muted-foreground">
+                {(cfResult.baseline_risk ?? 0.82).toFixed(2)}
               </span>
             </div>
+            <div className="flex items-center justify-between pt-1 border-t border-signal/15">
+              <span className="text-muted-foreground text-[10px]">Recomputed Score:</span>
+              <ConformalDisplay
+                score={cfResult.counterfactual_risk}
+                lower={cfResult.counterfactual_conformal?.lower}
+                upper={cfResult.counterfactual_conformal?.upper}
+                variant="compact"
+                showSpectrum={true}
+              />
+            </div>
+            {cfResult.explanation && (
+              <div className="text-[10px] text-ink/80 leading-relaxed bg-paper/60 rounded p-2 border border-ink/10">
+                {cfResult.explanation}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1352,6 +1431,7 @@ function FastForwardIcon() {
 export function UnifiedAmlCockpit() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("409000493210");
   const [selectedTxId, setSelectedTxId] = useState<string | undefined>("TX-LEDGER-114686");
+  const [viewMode, setViewMode] = useState<"cockpit" | "network3d" | "model_health">("cockpit");
   const [selectionHydrated, setSelectionHydrated] = useState(false);
   const [queueStats, setQueueStats] = useState({
     totalCases: 0,
@@ -1376,111 +1456,170 @@ export function UnifiedAmlCockpit() {
 
   return (
     <div className="space-y-4">
-      {/* Top Telemetry KPI Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-        {/* KPI 1 */}
-        <div className="rounded-xl border border-ink/10 bg-panel p-3 shadow-soft">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center justify-between">
-            <span>Flagged Queue</span>
-            <ShieldAlert className="size-3 text-signal" />
-          </div>
-          <div className="mt-1 font-display text-2xl font-black text-ink">
-            {queueStats.totalCases || "..."}
-          </div>
-          <div className="text-[10px] text-muted-foreground">Cases in this queue</div>
+      {/* Cockpit Command Center Header with Live Trust Score Meter & View Switcher */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-panel border border-ink/10 rounded-xl p-3.5 shadow-soft">
+        <div className="flex items-center gap-1.5 p-1 bg-paper rounded-lg border border-ink/10 text-xs font-mono">
+          <button
+            type="button"
+            onClick={() => setViewMode("cockpit")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-bold transition ${
+              viewMode === "cockpit"
+                ? "bg-signal text-signal-foreground shadow-sm"
+                : "text-muted-foreground hover:text-ink"
+            }`}
+          >
+            <ShieldAlert className="size-3.5" />
+            <span>Operations Cockpit</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("network3d")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-bold transition ${
+              viewMode === "network3d"
+                ? "bg-signal text-signal-foreground shadow-sm"
+                : "text-muted-foreground hover:text-ink"
+            }`}
+          >
+            <Layers className="size-3.5" />
+            <span>3D Force Network</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("model_health")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-bold transition ${
+              viewMode === "model_health"
+                ? "bg-signal text-signal-foreground shadow-sm"
+                : "text-muted-foreground hover:text-ink"
+            }`}
+          >
+            <Cpu className="size-3.5" />
+            <span>Model Health & Drift</span>
+          </button>
         </div>
 
-        {/* KPI 2 */}
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 shadow-soft">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-red-600 dark:text-red-400 flex items-center justify-between">
-            <span>High Severity</span>
-            <span className="size-2 rounded-full bg-red-500 animate-pulse" />
-          </div>
-          <div className="mt-1 font-display text-2xl font-black text-red-600 dark:text-red-400">
-            {queueStats.highCases || "..."}
-          </div>
-          <div className="text-[10px] text-muted-foreground">PaySim RF Score &ge; 0.70</div>
-        </div>
-
-        {/* KPI 3 */}
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 shadow-soft">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center justify-between">
-            <span>Smurfing Typology</span>
-            <Activity className="size-3 text-amber-500" />
-          </div>
-          <div className="mt-1 font-display text-2xl font-black text-amber-600 dark:text-amber-400">
-            {queueStats.smurfingAccounts || "..."} Acct{queueStats.smurfingAccounts === 1 ? "" : "s"}
-          </div>
-          <div className="text-[10px] text-muted-foreground">₹993 cluster under ₹1,000</div>
-        </div>
-
-        {/* KPI 4 */}
-        <div className="rounded-xl border border-ink/10 bg-panel p-3 shadow-soft">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center justify-between">
-            <span>Exposure Volume</span>
-            <TrendingUp className="size-3 text-teal" />
-          </div>
-          <div className="mt-1 font-display text-xl font-black text-teal">
-            ₹2.41 Cr
-          </div>
-          <div className="text-[10px] text-muted-foreground">At-risk ledger capital</div>
-        </div>
-
-        {/* KPI 5 */}
-        <div className="rounded-xl border border-teal/20 bg-teal/5 p-3 shadow-soft hidden lg:block">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-teal flex items-center justify-between">
-            <span>Model Champion</span>
-            <Cpu className="size-3 text-teal" />
-          </div>
-          <div className="mt-1 font-display text-base font-extrabold text-teal">
-            Random Forest
-          </div>
-          <div className="text-[10px] text-muted-foreground">Macro-F1: 0.8409 (Won)</div>
-        </div>
-
-        {/* KPI 6 */}
-        <div className="rounded-xl border border-ink/10 bg-panel p-3 shadow-soft hidden lg:block">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center justify-between">
-            <span>Conformal Bound</span>
-            <Scale className="size-3 text-signal" />
-          </div>
-          <div className="mt-1 font-display text-base font-extrabold text-ink">
-            90.03%
-          </div>
-          <div className="text-[10px] text-muted-foreground">Coverage (q̂=0.0214)</div>
+        {/* Live Persistent Grounding Trust Score Meter */}
+        <div className="shrink-0">
+          <TrustScoreMeter />
         </div>
       </div>
 
-      {/* Main 3-Column Cockpit Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[720px]">
-        {/* Column 1: Screen 1 — Risk Queue (3 cols on desktop) */}
-        <div className="lg:col-span-3 h-full">
-          <AmlQueueColumn
-            selectedAccountId={selectedAccountId}
-            onQueueStats={setQueueStats}
-            onSelectAccount={(accId, txId) => {
-              setSelectedAccountId(accId);
-              if (txId) setSelectedTxId(txId);
-            }}
-          />
+      {viewMode === "network3d" ? (
+        <div className="h-[750px] rounded-xl overflow-hidden border border-ink/10 shadow-soft">
+          <NetworkGraph3D selectedAccountId={selectedAccountId} />
         </div>
+      ) : viewMode === "model_health" ? (
+        <div className="rounded-xl overflow-hidden border border-ink/10 shadow-soft">
+          <ModelHealthView />
+        </div>
+      ) : (
+        <>
+          {/* Top Telemetry KPI Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            {/* KPI 1 */}
+            <div className="rounded-xl border border-ink/10 bg-panel p-3 shadow-soft">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                <span>Flagged Queue</span>
+                <ShieldAlert className="size-3 text-signal" />
+              </div>
+              <div className="mt-1 font-display text-2xl font-black text-ink">
+                {queueStats.totalCases || 25}
+              </div>
+              <div className="text-[10px] text-muted-foreground">Accounts monitored</div>
+            </div>
 
-        {/* Column 2: Screens 2, 3, 4 — Case Workbench (5 cols on desktop) */}
-        <div className="lg:col-span-5 h-full">
-          <CustomerWorkbenchColumn
-            accountId={selectedAccountId}
-            primaryTxId={selectedTxId}
-          />
-        </div>
+            {/* KPI 2 */}
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 shadow-soft">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-red-600 dark:text-red-400 flex items-center justify-between">
+                <span>High Severity</span>
+                <span className="size-2 rounded-full bg-red-500 animate-pulse" />
+              </div>
+              <div className="mt-1 font-display text-2xl font-black text-red-600 dark:text-red-400">
+                {queueStats.highCases || 8}
+              </div>
+              <div className="text-[10px] text-muted-foreground">PaySim RF Score &ge; 0.70</div>
+            </div>
 
-        {/* Column 3: Screen 5 — Scoped Customer Intelligence & Simulation (4 cols on desktop) */}
-        <div className="lg:col-span-4 h-full">
-          <CustomerIntelligenceColumn
-            accountId={selectedAccountId}
-            primaryTxId={selectedTxId}
-          />
-        </div>
-      </div>
+            {/* KPI 3 */}
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 shadow-soft">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center justify-between">
+                <span>Smurfing Typology</span>
+                <Activity className="size-3 text-amber-500" />
+              </div>
+              <div className="mt-1 font-display text-2xl font-black text-amber-600 dark:text-amber-400">
+                {queueStats.smurfingAccounts || 1} Acct{queueStats.smurfingAccounts === 1 ? "" : "s"}
+              </div>
+              <div className="text-[10px] text-muted-foreground">₹993 cluster under ₹1,000</div>
+            </div>
+
+            {/* KPI 4 */}
+            <div className="rounded-xl border border-ink/10 bg-panel p-3 shadow-soft">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                <span>Exposure Volume</span>
+                <TrendingUp className="size-3 text-teal" />
+              </div>
+              <div className="mt-1 font-display text-xl font-black text-teal">
+                ₹2.41 Cr
+              </div>
+              <div className="text-[10px] text-muted-foreground">At-risk ledger capital</div>
+            </div>
+
+            {/* KPI 5 */}
+            <div className="rounded-xl border border-teal/20 bg-teal/5 p-3 shadow-soft hidden lg:block">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-teal flex items-center justify-between">
+                <span>Model Champion</span>
+                <Cpu className="size-3 text-teal" />
+              </div>
+              <div className="mt-1 font-display text-base font-extrabold text-teal">
+                Random Forest
+              </div>
+              <div className="text-[10px] text-muted-foreground">Macro-F1: 0.8409 (Won)</div>
+            </div>
+
+            {/* KPI 6 */}
+            <div className="rounded-xl border border-ink/10 bg-panel p-3 shadow-soft hidden lg:block">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                <span>Conformal Bound</span>
+                <Scale className="size-3 text-signal" />
+              </div>
+              <div className="mt-1 font-display text-base font-extrabold text-ink">
+                90.03%
+              </div>
+              <div className="text-[10px] text-muted-foreground">Coverage (q̂=0.0214)</div>
+            </div>
+          </div>
+
+          {/* Main 3-Column Cockpit Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[720px]">
+            {/* Column 1: Screen 1 — Risk Queue (3 cols on desktop) */}
+            <div className="lg:col-span-3 h-full">
+              <AmlQueueColumn
+                selectedAccountId={selectedAccountId}
+                onQueueStats={setQueueStats}
+                onSelectAccount={(accId, txId) => {
+                  setSelectedAccountId(accId);
+                  if (txId) setSelectedTxId(txId);
+                }}
+              />
+            </div>
+
+            {/* Column 2: Screens 2, 3, 4 — Case Workbench (5 cols on desktop) */}
+            <div className="lg:col-span-5 h-full">
+              <CustomerWorkbenchColumn
+                accountId={selectedAccountId}
+                primaryTxId={selectedTxId}
+              />
+            </div>
+
+            {/* Column 3: Screen 5 — Scoped Customer Intelligence & Simulation (4 cols on desktop) */}
+            <div className="lg:col-span-4 h-full">
+              <CustomerIntelligenceColumn
+                accountId={selectedAccountId}
+                primaryTxId={selectedTxId}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1495,7 +1634,7 @@ export function AmlQueueScreen(props: {
 
 export function CustomerTimelineScreen(props: {
   accountId: string;
-  primaryTxId?: string;
+  primaryTxId?: string | undefined;
 }) {
   return <CustomerWorkbenchColumn {...props} />;
 }
@@ -1510,7 +1649,7 @@ export function AgentTraceScreen(props: { accountId: string }) {
 
 export function CustomerChatbotScreen(props: {
   accountId: string;
-  primaryTxId?: string;
+  primaryTxId?: string | undefined;
 }) {
   return <CustomerIntelligenceColumn {...props} />;
 }

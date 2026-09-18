@@ -19,6 +19,9 @@ import {
 
 import { useEffect, useMemo, useState } from "react";
 import { UnifiedAmlCockpit, PaginationControl } from "./aml-screens";
+import { TrustScoreMeter } from "./trust-score-meter";
+import { NetworkGraph3D } from "./network-graph-3d";
+import { formatTimingLabel } from "../lib/copy";
 import {
   checkEnginesHealth,
   askCounterfactualOrChat,
@@ -245,6 +248,9 @@ function Masthead({ engines }: { engines: EngineStatus }) {
             {onlineCount > 0 ? `Engines online (${onlineCount}/4)` : "Offline fixtures active"}
           </span>
         </div>
+        <div className="hidden md:flex items-center">
+          <TrustScoreMeter />
+        </div>
         <div className="flex shrink-0 items-center gap-3">
           <div className="hidden text-right leading-tight sm:block">
             <div className="text-xs font-semibold">Chitrita G.</div>
@@ -422,67 +428,104 @@ function RiskHeader({
 }
 
 function EvidenceNetwork({ item, network }: { item: CaseFile; network: TypologyNetwork | null }) {
+  const [graphMode, setGraphMode] = useState<"3d" | "2d">("3d");
   const isSynthetic = item.tier === "synthetic_network";
   const isLive = isSynthetic && network !== null;
   const flaggedEdge = isLive
     ? (network!.edges.find((e) => network!.nodes.some((n) => n.account_id === e.from_account)) ??
       network!.edges[0])
     : null;
+
   return (
-    <div className="network-stage" aria-label="Transaction network visualization">
-      <svg
-        viewBox="0 0 760 270"
-        role="img"
-        aria-label={
-          isSynthetic ? "Closed three-account transaction loop" : "Transaction evidence path"
-        }
-      >
-        <path className="network-link" d="M165 138 C250 18 413 18 516 116" />
-        <path className="network-link network-link-delay" d="M516 116 C590 176 463 246 338 220" />
-        <path className="network-link network-link-late" d="M338 220 C228 236 91 196 165 138" />
-        <circle className="node-halo" cx="165" cy="138" r="41" />
-        <circle className="node-main" cx="165" cy="138" r="23" />
-        <circle className="node-halo amber" cx="516" cy="116" r="38" />
-        <circle className="node-main amber" cx="516" cy="116" r="21" />
-        <circle className="node-halo teal" cx="338" cy="220" r="34" />
-        <circle className="node-main teal" cx="338" cy="220" r="19" />
-        <text x="113" y="88" className="network-label">
-          {isLive
-            ? (flaggedEdge?.from_account ?? "ACC-SYN-401")
-            : isSynthetic
-              ? "ACC-SYN-401"
-              : "SOURCE"}
-        </text>
-        <text x="491" y="69" className="network-label">
-          {isLive
-            ? (flaggedEdge?.to_account ?? "ACC-SYN-402")
-            : isSynthetic
-              ? "ACC-SYN-402"
-              : "PRIMARY"}
-        </text>
-        <text x="301" y="266" className="network-label">
-          {isSynthetic ? "ACC-SYN-403" : "EVIDENCE"}
-        </text>
-        <text x="311" y="58" className="network-amount">
-          {isLive && flaggedEdge ? `$${flaggedEdge.amount.toLocaleString()}` : item.amount}
-        </text>
-      </svg>
-      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-3 font-mono text-[9px] uppercase text-muted-foreground">
-        <span>
-          {isLive
-            ? `Live network · ${network!.nodes.length} accounts · ${network!.edges.length} transactions`
-            : isSynthetic
-              ? "Closed loop · 3 hops · 6h"
-              : "Evidence path · bounded view"}
-        </span>
-        <span>
-          {isLive
-            ? "Live typology engine"
-            : isSynthetic
-              ? "Synthetic data · demo exhibit"
-              : "Real evidence"}
+    <div className="space-y-2">
+      {/* 3D vs 2D Sub-switcher */}
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-1 bg-paper rounded p-0.5 border border-ink/10 text-[10px] font-mono">
+          <button
+            type="button"
+            onClick={() => setGraphMode("3d")}
+            className={`px-2 py-0.5 rounded font-bold transition ${
+              graphMode === "3d" ? "bg-signal text-signal-foreground shadow-xs" : "text-muted-foreground hover:text-ink"
+            }`}
+          >
+            3D Force Graph
+          </button>
+          <button
+            type="button"
+            onClick={() => setGraphMode("2d")}
+            className={`px-2 py-0.5 rounded font-bold transition ${
+              graphMode === "2d" ? "bg-signal text-signal-foreground shadow-xs" : "text-muted-foreground hover:text-ink"
+            }`}
+          >
+            2D Schematic
+          </button>
+        </div>
+        <span className="font-mono text-[9px] text-muted-foreground uppercase">
+          {graphMode === "3d" ? "WebGL Three.js · Ambient Drift" : "Static Vector Exhibit"}
         </span>
       </div>
+
+      {graphMode === "3d" ? (
+        <div className="h-[360px] rounded-lg overflow-hidden border border-ink/10 shadow-soft">
+          <NetworkGraph3D selectedAccountId={item.transactionId.includes("SYNTH") ? "ACC-SYN-402" : "409000493210"} />
+        </div>
+      ) : (
+        <div className="network-stage" aria-label="Transaction network visualization">
+          <svg
+            viewBox="0 0 760 270"
+            role="img"
+            aria-label={
+              isSynthetic ? "Closed three-account transaction loop" : "Transaction evidence path"
+            }
+          >
+            <path className="network-link" d="M165 138 C250 18 413 18 516 116" />
+            <path className="network-link network-link-delay" d="M516 116 C590 176 463 246 338 220" />
+            <path className="network-link network-link-late" d="M338 220 C228 236 91 196 165 138" />
+            <circle className="node-halo" cx="165" cy="138" r="41" />
+            <circle className="node-main" cx="165" cy="138" r="23" />
+            <circle className="node-halo amber" cx="516" cy="116" r="38" />
+            <circle className="node-main amber" cx="516" cy="116" r="21" />
+            <circle className="node-halo teal" cx="338" cy="220" r="34" />
+            <circle className="node-main teal" cx="338" cy="220" r="19" />
+            <text x="113" y="88" className="network-label">
+              {isLive
+                ? (flaggedEdge?.from_account ?? "ACC-SYN-401")
+                : isSynthetic
+                  ? "ACC-SYN-401"
+                  : "SOURCE"}
+            </text>
+            <text x="491" y="69" className="network-label">
+              {isLive
+                ? (flaggedEdge?.to_account ?? "ACC-SYN-402")
+                : isSynthetic
+                  ? "ACC-SYN-402"
+                  : "PRIMARY"}
+            </text>
+            <text x="301" y="266" className="network-label">
+              {isSynthetic ? "ACC-SYN-403" : "EVIDENCE"}
+            </text>
+            <text x="311" y="58" className="network-amount">
+              {isLive && flaggedEdge ? `$${flaggedEdge.amount.toLocaleString()}` : item.amount}
+            </text>
+          </svg>
+          <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-3 font-mono text-[9px] uppercase text-muted-foreground">
+            <span>
+              {isLive
+                ? `Live network · ${network!.nodes.length} accounts · ${network!.edges.length} transactions`
+                : isSynthetic
+                  ? "Closed loop · 3 hops · 6h"
+                  : "Evidence path · bounded view"}
+            </span>
+            <span>
+              {isLive
+                ? "Live typology engine"
+                : isSynthetic
+                  ? "Synthetic data · demo exhibit"
+                  : "Real evidence"}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
