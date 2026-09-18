@@ -285,3 +285,128 @@ match the implementation, verified against `scripts/smoke_test.py`'s real calls.
   `/api/v1/agent/counterfactual` (which goes through `agent/tools.py`) is what's actually used
   end-to-end. Flagging rather than deleting, since it's Person A's code and not blocking
   anything — a call to remove it belongs to a future cleanup pass with their sign-off.
+
+## 6. STR draft pipeline (optional feature, `feature/str-draft` branch)
+
+Adds an optional, analyst-triggered Suspicious Transaction Report (STR) draft on top of an
+already-completed agent investigation. See `docs/STR_FEASIBILITY.md` for the go/no-go research
+this was built from (official FIU-IND form structure, cited) — this section describes what was
+actually built.
+
+### 6.1 Flow
+
+```
+Dashboard (case selected, investigation already run)
+  │  "Generate STR Draft" button
+  ▼
+POST /api/v1/agent/draft_str/{case_id}          (agent/api.py, behind require_api_key)
+  │  body = { tier_origin, primary_transaction_id, risk_score, trace_events, narrative }
+  │  — the same shape /api/v1/agent/investigate already returns; nothing is looked up
+  │    server-side, so a re-run investigation always produces a fresh, in-sync draft.
+  ▼
+agent/str_draft.py :: build_str_draft()
+  │  1. audit_grounding(trace_events, narrative)  — reuses agent/grounding.py, INDEPENDENTLY
+  │     re-verifying every sentence against the trace evidence (never trusts that the caller's
+  │     narrative was already grounded upstream — this is a real second check, not a relabeled
+  │     first one).
+  │  2. Regex extraction of account/transaction IDs, cited $ amounts (incl. negative balances),
+  │     and date range from the trace evidence.
+  │  3. Deterministic tier/tool/risk_score → suggested FIU "reasons for suspicion" mapping.
+  │  4. Static + tier-aware "missing sections" list — explicit, never silently omitted.
+  ▼
+{ narrative, sentences_with_citations, validator_notes, exportable_data }
+  │
+  ├─► Dashboard renders inline: each sentence + citation chip (click → scrolls to and
+  │   highlights the exact source row in the existing Reasoning Trace panel), validator
+  │   notes, suggested reason codes, missing-sections list.
+  │
+  └─► "Download as DOCX" → POST .../draft_str/{case_id}/docx (same body) →
+      agent/str_docx.py :: build_str_docx() → python-docx → STR_<case_id>_<timestamp>.docx
+```
+
+Nothing is persisted anywhere in this pipeline — both endpoints recompute from the request body
+on every call. Re-running the investigation and clicking "Generate STR Draft" again always
+reflects the new run; there is no cache to go stale.
+
+### 6.2 What's deterministic vs. what would need a real LLM
+
+**Everything in this feature is deterministic — zero LLM calls anywhere in `agent/str_draft.py`
+or `agent/str_docx.py`.** Specifically:
+
+| Step | How it's done | Needs an LLM? |
+|---|---|---|
+| Splitting the narrative into sentences | Reused from `agent/grounding.py` (regex-based, already handles currency decimals/abbreviations) | No |
+| Re-verifying each sentence against trace evidence | Reused `is_sentence_strictly_grounded`/`audit_grounding` (exact entity-ID/number matching, speculative-term denylist) | No |
+| Attaching a citation to each retained sentence | Reused `find_supporting_event_id` (token-overlap match against trace events) | No |
+| Extracting account/transaction IDs, amounts, date range | Regex over trace event text — same evidence the narrative was built from | No |
+| Suggesting FIU "reasons for suspicion" checkboxes | Deterministic rule table keyed on `tier_origin` + `tool_called` + `risk_score` threshold | No |
+| Flagging missing sections (KYC, institutional config) | Static list + tier-conditional inserts | No |
+| Rendering to DOCX | `python-docx`, template-style document construction | No |
+
+**The one place an LLM *would* help, and where it's deliberately not used:** the underlying
+narrative sentences themselves (e.g. "Account history analysis for ACC-1092 detected a severe
+anomaly...") are generated **upstream**, by `agent/loop.py`'s investigation step — either the
+deterministic built-in reasoner (default) or an external LLM if `VERITY_LLM_API_KEY` is
+configured (see §5.5). An LLM there would produce smoother prose; it would not add real facts,
+since every number in that prose already comes from a tool's structured output. The STR draft
+pipeline consumes whichever narrative it's given either way, and re-validates it exactly the
+same way regardless of its origin — this is precisely why the validator had to be deterministic
+rather than a second LLM call: it needs to hold *both* paths to the same standard, including a
+future LLM-authored narrative that might be less careful than the built-in template sentences.
+
+### 6.3 What a real STR needs that this system cannot supply
+
+Verified against the actual FIU-IND banking-company STR form (`docs/STR_FEASIBILITY.md` §2.1,
+cited from `fiuindia.gov.in`). This system has no KYC/customer-identity layer anywhere — not a
+missing feature so much as a structural fact about the datasets (`creditcard.csv` is anonymized
+by design; `bank.xlsx` carries account numbers, not names). The draft states this explicitly,
+per case, rather than fabricating or silently omitting it:
+- Principal Officer / Reporting Branch details (Parts 2–3): institutional config, not case data.
+- Individual/entity identity (Parts 4–5, Annexures A/B): not available, stated as such.
+- Action-taken status (Part 8): requires compliance-team input.
+- Card-fraud-tier cases are flagged as the wrong document type (an STR is an AML instrument, not
+  a point-in-time fraud score) rather than producing a polished-looking draft that overclaims.
+- Synthetic-network-tier cases are flagged as non-real in the draft itself, not just in the UI
+  tab label — the biggest risk this feature identified in the feasibility research was a
+  fabricated network producing a *more* convincing-looking draft than the honest, real
+  ledger-tier case; the missing-sections list neutralizes that by making the tier's status
+  impossible to miss inside the document itself.
+
+### 6.4 DOCX citation format — a known, documented substitution
+Mainline `python-docx` has no native Word-footnote support (open upstream issue since 2014;
+forks that add it are small, less-maintained side projects). Citations render as numbered
+inline markers (`[1]`, `[2]`, ...) resolving to a "Sources" list at the end of the document —
+the same practical citation contract as a footnote (jump from a claim to its exact source: event
+ID, tool, timestamp), without a fragile dependency or hand-rolled OOXML patching. Documented in
+`agent/str_docx.py`'s module docstring; the one place to change if real in-document footnotes
+are wanted later.
+
+### 6.5 Bugs found and fixed while verifying this feature live
+Three pre-existing issues, unrelated to the STR feature itself, were found only by actually
+driving it end-to-end in a real browser against the live stack (not by reading the code):
+1. `agent/api.py`'s CORS config didn't expose `Content-Disposition` to cross-origin JS, so the
+   browser couldn't read the real filename on the DOCX download and silently fell back to a
+   generic one — fixed with `expose_headers=["Content-Disposition"]`.
+2. `scripts/dev_up.py` started the dashboard dev server without a pinned port; the shared
+   `@lovable.dev/vite-tanstack-config`'s sandbox detection nondeterministically picked 8080
+   instead of 3000 — fixed by pinning `--port 3000 --strictPort` explicitly.
+3. The local `.env` predated a change that added `VITE_LEDGER_API_KEY`/`VITE_TYPOLOGY_API_KEY`/
+   `VITE_AGENT_API_KEY` to `.env.example` (the template itself was already correct) — every live
+   investigate call was silently sending an empty `X-API-Key`, 401'ing, and falling back to
+   fixture data with no visible error anywhere. Fixed by resyncing from the template; flagged
+   here because it's exactly the kind of drift a code review would never catch — only running
+   the actual stack surfaced it.
+
+### 6.6 Files
+- `agent/str_draft.py` (new) — deterministic draft builder.
+- `agent/str_docx.py` (new) — DOCX renderer.
+- `agent/api.py` — two new routes, both behind `require_api_key`:
+  `POST /api/v1/agent/draft_str/{case_id}` and `POST /api/v1/agent/draft_str/{case_id}/docx`.
+- `dashboard/src/components/verity-workspace.tsx` — new `StrDraftPanel`; `ReasoningTrace`
+  extended with a `highlightedEventId` prop for the citation-click-to-source-row interaction.
+- `dashboard/src/lib/api-client.ts` — `generateStrDraft`, `downloadStrDraftDocx`, and the
+  `StrDraft`/`SentenceCitation`/`ValidatorNote`/`ReasonSuggestion`/`StrExportableData` types.
+- `tests/test_str_draft.py` (new) — 13 tests: citation attachment, independent rejection of a
+  hallucinated sentence with an actionable reason, structured-field extraction (incl. negative
+  amounts), tier-aware missing-section flags, determinism/no-persistence, DOCX round-trip
+  parsing, and API-level auth enforcement.
