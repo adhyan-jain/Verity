@@ -1,6 +1,6 @@
 """
 Unit tests for Agent Tool Quarantine Layer (agent/tools.py).
-Verifies strict data contracts compliance and dual-mode behavior.
+Verifies strict data contracts compliance, dual-mode behavior, and model-backed counterfactual inference.
 """
 
 import pytest
@@ -51,11 +51,11 @@ def test_walk_graph_real_ledger():
     assert walk["tier"] == "real_ledger"
     assert isinstance(walk["steps"], list)
     assert len(walk["steps"]) > 0
-    # In real ledger, from_account equals to_account (single account sequence)
     for step in walk["steps"]:
         assert step["tier"] == "real_ledger"
         assert step["from_account"] == "ACC-1092"
         assert "tool_call_id" in step
+        assert "balance" in step
 
 
 def test_walk_graph_synthetic_network():
@@ -63,24 +63,25 @@ def test_walk_graph_synthetic_network():
     assert walk["account_id"] == "ACC-SYN-401"
     assert walk["tier"] == "synthetic_network"
     assert len(walk["steps"]) >= 2
-    # In synthetic network, hops traverse different accounts (round-tripping cycle)
     accounts = [s["to_account"] for s in walk["steps"]]
     assert len(set(accounts)) > 1
 
 
-def test_counterfactual_amount_reduction():
-    # Reducing high amount to $50 should clear the fraud flag
+def test_model_backed_counterfactual_amount_reduction():
+    # Reducing high amount to $50 should shift model probability and clear verdict
     result = counterfactual("TX-CARD-9842", {"Amount": 50.0})
     assert result["transaction_id"] == "TX-CARD-9842"
-    assert result["original_risk_score"] > 0.8
+    assert result["original_risk_score"] >= 0.80
     assert result["original_verdict"] == "flagged"
-    assert result["recalculated_risk_score"] < 0.5
+    assert result["recalculated_risk_score"] < 0.50
     assert result["recalculated_verdict"] == "clear"
+    assert "Amount" in result["feature_attribution_deltas"]
+    assert result["feature_attribution_deltas"]["Amount"] < 0.0
 
 
-def test_counterfactual_amount_increase():
-    # Increasing amount to very large sum should keep verdict flagged
+def test_model_backed_counterfactual_amount_increase():
+    # Increasing amount should preserve or increase flagged verdict
     result = counterfactual("TX-CARD-9842", {"Amount": 15000.0})
-    assert result["recalculated_risk_score"] > 0.8
+    assert result["recalculated_risk_score"] >= 0.80
     assert result["recalculated_verdict"] == "flagged"
-
+    assert result["feature_attribution_deltas"]["Amount"] > 0.0
