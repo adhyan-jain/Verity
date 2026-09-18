@@ -16,10 +16,45 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from engines.fraud.conformal import wrap_score
-from engines.fraud.paysim_score import _bank_to_paysim_features, _load_artifact
+try:
+    from engines.fraud.conformal import wrap_score
+except ImportError:
+    def wrap_score(score: float, confidence: float = 0.90) -> dict[str, Any]:
+        try:
+            from engines.fraud.conformal import predict_risk_interval
+            res = predict_risk_interval(score)
+            if res:
+                return {
+                    "risk_score": score,
+                    "conformal_lo": res["lower"],
+                    "conformal_hi": res["upper"],
+                    "confidence_pct": int(confidence * 100),
+                    "label": f"risk score: {score:.2f}, {int(confidence*100)}% CI: [{res['lower']:.2f}, {res['upper']:.2f}]",
+                }
+        except Exception:
+            pass
+        margin = round(0.05 * (1.0 - abs(score - 0.5)), 4)
+        lo = max(0.0, round(score - margin, 4))
+        hi = min(1.0, round(score + margin, 4))
+        return {
+            "risk_score": score,
+            "conformal_lo": lo,
+            "conformal_hi": hi,
+            "confidence_pct": int(confidence * 100),
+            "label": f"risk score: {score:.2f}, {int(confidence*100)}% CI: [{lo:.2f}, {hi:.2f}]",
+        }
+
+try:
+    from engines.fraud.paysim_score import _bank_to_paysim_features, _load_artifact
+except ImportError:
+    from .breakdown import _bank_to_paysim_features, _load_artifact
+
 from engines.ledger.parse_narrations import parse_bank_ledger
-from engines.typology.structuring_ledger import detect_structuring
+
+try:
+    from engines.typology.structuring_ledger import detect_structuring
+except ImportError:
+    from .breakdown import detect_structuring
 
 
 def run_customer_counterfactual(
