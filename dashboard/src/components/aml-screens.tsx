@@ -490,6 +490,10 @@ export function CustomerWorkbenchColumn({
   const tracePageSize = 4;
 
   useEffect(() => {
+    setActiveTab("timeline");
+  }, [accountId]);
+
+  useEffect(() => {
     let mounted = true;
     setTimelineLoading(true);
     setBreakdownLoading(true);
@@ -1322,8 +1326,19 @@ function FastForwardIcon() {
 // Master Unified AML Operations Cockpit (Screens 1–5 in Palantir/Bloomberg Layout)
 // ============================================================================
 export function UnifiedAmlCockpit() {
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("409000493210");
-  const [selectedTxId, setSelectedTxId] = useState<string | undefined>("TX-LEDGER-114686");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(() => {
+    if (typeof window === "undefined") return "409000493210";
+    return window.localStorage.getItem("verity.selectedAccountId") || "409000493210";
+  });
+  const [selectedTxId, setSelectedTxId] = useState<string | undefined>(() => {
+    if (typeof window === "undefined") return "TX-LEDGER-114686";
+    return window.localStorage.getItem("verity.selectedTxId") || "TX-LEDGER-114686";
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem("verity.selectedAccountId", selectedAccountId);
+    if (selectedTxId) window.localStorage.setItem("verity.selectedTxId", selectedTxId);
+  }, [selectedAccountId, selectedTxId]);
 
   return (
     <div className="space-y-4">

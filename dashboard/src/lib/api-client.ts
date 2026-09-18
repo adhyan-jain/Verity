@@ -643,7 +643,7 @@ export const DEFAULT_AML_TRACE: AmlTraceResponse = {
 };
 
 export function getAmlTimelineFixture(accountId: string): AmlTimelineResponse {
-  const item = DEFAULT_AML_QUEUE.find((q) => q.account_id === accountId) || DEFAULT_AML_QUEUE[0];
+  const item = DEFAULT_AML_QUEUE.find((q) => q.account_id === accountId) || DEFAULT_AML_QUEUE[0]!;
   const txns: AmlTimelineItem[] = [
     {
       id: "TX-LEDGER-071520",
@@ -783,9 +783,21 @@ export async function fetchAmlBreakdown(accountId: string): Promise<AmlBreakdown
   } catch {
     // Fallback
   }
+  const queueItem = DEFAULT_AML_QUEUE.find((item) => item.account_id === accountId);
+  const primaryTransactionId = queueItem?.id || `TX-LEDGER-${accountId}`;
   return {
     ...DEFAULT_AML_BREAKDOWN,
     account_id: accountId,
+    primary_transaction_id: primaryTransactionId,
+    claims: DEFAULT_AML_BREAKDOWN.claims.map((claim) => ({
+      ...claim,
+      evidence_row_id: claim.evidence_row_id === DEFAULT_AML_BREAKDOWN.primary_transaction_id
+        ? primaryTransactionId
+        : claim.evidence_row_id,
+      sentence: claim.sentence
+        .replaceAll(DEFAULT_AML_BREAKDOWN.primary_transaction_id, primaryTransactionId)
+        .replaceAll(DEFAULT_AML_BREAKDOWN.account_id, accountId),
+    })),
   };
 }
 
@@ -802,8 +814,13 @@ export async function fetchAmlTrace(accountId: string): Promise<AmlTraceResponse
   } catch {
     // Fallback
   }
+  const queueItem = DEFAULT_AML_QUEUE.find((item) => item.account_id === accountId);
+  const primaryTransactionId = queueItem?.id || `TX-LEDGER-${accountId}`;
+  const serializedDefaultTrace = JSON.stringify(DEFAULT_AML_TRACE)
+    .replaceAll(DEFAULT_AML_TRACE.account_id, accountId)
+    .replaceAll("TX-LEDGER-114686", primaryTransactionId);
   return {
-    ...DEFAULT_AML_TRACE,
+    ...JSON.parse(serializedDefaultTrace) as AmlTraceResponse,
     account_id: accountId,
     case_id: `CASE-${accountId}`,
   };
