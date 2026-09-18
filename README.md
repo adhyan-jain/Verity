@@ -4,6 +4,9 @@
 > (card-fraud alerts and ledger account-risk) feeding one case queue, with an AI agent that
 > investigates each flagged case and can be questioned about its own reasoning live.
 
+> **New to this repo?** [`GETTING_STARTED.md`](GETTING_STARTED.md) walks through every step
+> from `git clone` to a running, tested stack.
+
 ## 🎯 Target Persona
 **Priya**, a financial-crime analyst at a mid-size digital-first bank / NBFC where one combined
 desk manages both transaction fraud alerts and account-level ledger investigations.
@@ -124,6 +127,8 @@ cd dashboard && npx tsc --noEmit && npm run build
 
 ## 📄 Further reading
 
+- [`GETTING_STARTED.md`](GETTING_STARTED.md) — full step-by-step from a fresh clone, including
+  troubleshooting for first-run quirks (LFS, model training, first-call parse latency).
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — component map, every integration gap found, decisions
   made, and what's still unresolved.
 - [`docs/API_SPEC.md`](docs/API_SPEC.md) — full endpoint reference, verified against the code.

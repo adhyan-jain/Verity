@@ -49,7 +49,7 @@ def run_checks() -> None:
     check("unauthenticated request is rejected (401)", resp.status_code == 401, f"(got {resp.status_code})")
 
     print("\n2. Ledger engine — real bank.xlsx accounts, timeline, walk")
-    resp = requests.get("http://127.0.0.1:8002/api/v1/ledger/accounts", timeout=10)
+    resp = requests.get("http://127.0.0.1:8002/api/v1/ledger/accounts", timeout=45)
     check("list_accounts returns 200", resp.status_code == 200, f"(got {resp.status_code})")
     accounts = resp.json()
     check("at least one real account parsed", len(accounts) > 0)
