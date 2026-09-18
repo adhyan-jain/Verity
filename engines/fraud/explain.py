@@ -3,6 +3,8 @@ SHAP Explainability Module for Fraud Detection.
 Person A: Splits interpretable features (Time, Amount) vs anonymized signals (V1-V28).
 """
 
+import hashlib
+import logging
 import os
 import pickle
 from typing import Any
@@ -10,7 +12,17 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+logger = logging.getLogger("engines.fraud.explain")
+
 _CACHED_ARTIFACT: dict[str, Any] | None = None
+
+
+def _file_sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def load_fraud_artifact(
@@ -18,6 +30,9 @@ def load_fraud_artifact(
 ) -> dict[str, Any]:
     """
     Loads and caches model artifact containing LightGBM classifier and SHAP explainer.
+    Verifies the artifact's checksum against its companion `.sha256` file (written
+    by train.py) when present, so a corrupted or unexpectedly replaced model.pkl
+    is rejected instead of silently loaded.
     """
     global _CACHED_ARTIFACT
     if _CACHED_ARTIFACT is None:
@@ -25,6 +40,24 @@ def load_fraud_artifact(
             raise FileNotFoundError(
                 f"Fraud model artifact not found at {artifact_path}. "
                 "Run `engines/fraud/train.py` first."
+            )
+        checksum_path = artifact_path + ".sha256"
+        if os.path.exists(checksum_path):
+            with open(checksum_path) as f:
+                expected_hash = f.read().strip()
+            actual_hash = _file_sha256(artifact_path)
+            if actual_hash != expected_hash:
+                raise RuntimeError(
+                    f"Fraud model artifact at {artifact_path} failed checksum "
+                    f"verification (expected {expected_hash}, got {actual_hash}). "
+                    "Refusing to load a potentially corrupted or tampered artifact."
+                )
+        else:
+            logger.warning(
+                "No checksum file found at %s; loading %s without integrity "
+                "verification.",
+                checksum_path,
+                artifact_path,
             )
         with open(artifact_path, "rb") as f:
             _CACHED_ARTIFACT = pickle.load(f)
@@ -85,6 +118,18 @@ def explain_transaction(
     proba = float(model.predict_proba(input_df)[0, 1])
     risk_score = round(proba, 4)
     verdict = "flagged" if risk_score >= threshold else "clear"
+
+    # Prediction log: lets delayed ground-truth fraud labels be joined back to
+    # what the model actually scored, for live precision/recall monitoring.
+    logger.info(
+        "prediction transaction_id=%s model_version=%s risk_score=%s "
+        "threshold=%s verdict=%s",
+        transaction_id,
+        model_version,
+        risk_score,
+        threshold,
+        verdict,
+    )
 
     # Compute SHAP values robustly across versions and output shapes
     shap_output = explainer.shap_values(input_df)
