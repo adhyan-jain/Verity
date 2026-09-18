@@ -22,8 +22,8 @@ const FRAUD_API_KEY = import.meta.env.VITE_FRAUD_API_KEY ?? "";
 const LEDGER_API_KEY = import.meta.env.VITE_LEDGER_API_KEY ?? "";
 const TYPOLOGY_API_KEY = import.meta.env.VITE_TYPOLOGY_API_KEY ?? "";
 const AGENT_API_KEY = import.meta.env.VITE_AGENT_API_KEY ?? "";
-const HEALTH_TIMEOUT_MS = 2500;
-const REQUEST_TIMEOUT_MS = 8000;
+const HEALTH_TIMEOUT_MS = 6000;
+const REQUEST_TIMEOUT_MS = 15000;
 
 export type EngineStatus = {
   agent: boolean;

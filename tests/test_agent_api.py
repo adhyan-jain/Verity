@@ -108,7 +108,7 @@ def test_api_chat_latency_watchdog_trigger():
     from agent.fallback import execute_with_latency_guard
 
     res = execute_with_latency_guard(
-        task_func=lambda: time.sleep(0.02) or {"slow": True},
+        task_func=lambda: time.sleep(0.08) or {"slow": True},
         query="why was this flagged",
         timeout_seconds=0.01,
     )

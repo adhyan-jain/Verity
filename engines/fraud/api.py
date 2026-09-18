@@ -25,9 +25,11 @@ _STARTUP_ERROR: str | None = None
 BASE_TIMESTAMP = datetime(2026, 9, 18, 0, 0, 0, tzinfo=timezone.utc)
 
 FRAUD_API_KEY = os.environ.get("FRAUD_API_KEY")
+_DEFAULT_CORS = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://127.0.0.1:5173"
+_RAW_CORS = os.environ.get("FRAUD_CORS_ORIGINS") or _DEFAULT_CORS
 _ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.environ.get("FRAUD_CORS_ORIGINS", "").split(",")
+    for origin in _RAW_CORS.split(",")
     if origin.strip()
 ]
 
@@ -152,8 +154,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_ALLOWED_ORIGINS,
-    allow_credentials=bool(_ALLOWED_ORIGINS),
+    allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

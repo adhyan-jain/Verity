@@ -800,11 +800,31 @@ export function VerityWorkspace() {
   );
 
   useEffect(() => {
-    checkEnginesHealth().then((status) => setEngines(status));
-    const interval = setInterval(() => {
-      checkEnginesHealth().then((status) => setEngines(status));
-    }, 15000);
-    return () => clearInterval(interval);
+    let mounted = true;
+    const updateHealth = () => {
+      checkEnginesHealth().then((status) => {
+        if (!mounted) return;
+        const count = Object.values(status).filter(Boolean).length;
+        // If all 4 failed (common when laptop or tab wakes from sleep), retry once before dropping to offline
+        if (count === 0) {
+          setTimeout(() => {
+            if (!mounted) return;
+            checkEnginesHealth().then((retryStatus) => {
+              if (mounted) setEngines(retryStatus);
+            });
+          }, 1200);
+        } else {
+          setEngines(status);
+        }
+      });
+    };
+
+    updateHealth();
+    const interval = setInterval(updateHealth, 15000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // Replace fixture evidence with live engine/agent data for the selected case.

@@ -315,11 +315,11 @@ class VerityLLMClient:
         }
 
         try:
-            resp = requests.post(
-                url, headers=headers, json=payload, timeout=self.timeout
-            )
-            # Some free OpenRouter/local models don't support
-            # response_format={"type": "json_object"} - retry without it.
+            resp = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+            if resp.status_code in (429, 401, 403):
+                logger.warning("External LLM returned HTTP %s (rate limited / unauthorized). Disabling external LLM.", resp.status_code)
+                self.api_key = ""
+                return None
             if resp.status_code == 400 and "response_format" in resp.text:
                 payload.pop("response_format", None)
                 resp = requests.post(
@@ -336,7 +336,8 @@ class VerityLLMClient:
                 self.model,
             )
         except requests.exceptions.RequestException as e:
-            logger.warning("External LLM request error: %s", type(e).__name__)
+            logger.warning("External LLM request error: %s. Disabling external LLM.", type(e).__name__)
+            self.api_key = ""
 
         return None
 
