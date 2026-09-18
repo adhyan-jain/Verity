@@ -7,7 +7,9 @@ from typing import List, Dict, Any
 import pandas as pd
 
 
-def detect_ledger_anomalies(df: pd.DataFrame, baselines: Dict[str, Any]) -> List[Dict[str, Any]]:
+def detect_ledger_anomalies(
+    df: pd.DataFrame, baselines: Dict[str, Any]
+) -> List[Dict[str, Any]]:
     """
     Detects reconciliation anomalies matching ReconciliationAnomaly schema:
     - balance_break: sudden unexpected dip or negative balance

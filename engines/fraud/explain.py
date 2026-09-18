@@ -5,15 +5,17 @@ Person A: Splits interpretable features (Time, Amount) vs anonymized signals (V1
 
 import os
 import pickle
-from typing import List, Dict, Any, Optional, Union
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
+_CACHED_ARTIFACT: dict[str, Any] | None = None
 
-_CACHED_ARTIFACT: Optional[Dict[str, Any]] = None
 
-
-def load_fraud_artifact(artifact_path: str = "engines/fraud/model.pkl") -> Dict[str, Any]:
+def load_fraud_artifact(
+    artifact_path: str = "engines/fraud/model.pkl",
+) -> dict[str, Any]:
     """
     Loads and caches model artifact containing LightGBM classifier and SHAP explainer.
     """
@@ -47,11 +49,11 @@ def format_time_label(seconds_offset: float) -> str:
 def explain_transaction(
     model: Any = None,
     explainer: Any = None,
-    features: Optional[Dict[str, Any]] = None,
+    features: dict[str, Any] | None = None,
     transaction_id: str = "unknown",
-    artifact: Optional[Dict[str, Any]] = None,
+    artifact: dict[str, Any] | None = None,
     top_n: int = 10,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Computes SHAP feature attribution and categorizes features into
     interpretable (Time, Amount) and anonymized (V1-V28).
@@ -68,7 +70,7 @@ def explain_transaction(
             explainer = artifact["explainer"]
             feature_names = artifact["feature_names"]
             threshold = artifact.get("threshold", 0.5)
-            model_version = artifact.get("model_version", "v1.0-benchmark-winner")
+            model_version = artifact.get("model_version", "v1.1-prod-calibrated")
         else:
             feature_names = [f"V{i}" for i in range(1, 29)]
             feature_names = ["Time"] + feature_names + ["Amount"]
@@ -79,7 +81,7 @@ def explain_transaction(
         explainer = artifact["explainer"]
         feature_names = artifact["feature_names"]
         threshold = artifact.get("threshold", 0.5)
-        model_version = artifact.get("model_version", "v1.0-benchmark-winner")
+        model_version = artifact.get("model_version", "v1.1-prod-calibrated")
 
     # Construct clean feature vector matching feature_names
     row_data = {feat: float(features.get(feat, 0.0)) for feat in feature_names}
@@ -90,11 +92,10 @@ def explain_transaction(
     risk_score = round(proba, 4)
     verdict = "flagged" if risk_score >= threshold else "clear"
 
-    # Compute SHAP values
+    # Compute SHAP values robustly across versions and output shapes
     shap_output = explainer.shap_values(input_df)
     if isinstance(shap_output, list):
-        # Binary classifier list of arrays [class_0, class_1]
-        shap_vals = np.array(shap_output[1])[0]
+        shap_vals = np.asarray(shap_output[-1]).flatten()
     elif isinstance(shap_output, np.ndarray):
         if shap_output.ndim == 3:
             shap_vals = shap_output[0, :, 1]
@@ -106,7 +107,7 @@ def explain_transaction(
         shap_vals = np.zeros(len(feature_names))
 
     # Build top factors
-    factors: List[Dict[str, Any]] = []
+    factors: list[dict[str, Any]] = []
     for feat_name, shap_val in zip(feature_names, shap_vals):
         contrib = round(float(shap_val), 4)
         if feat_name == "Amount":
@@ -121,12 +122,14 @@ def explain_transaction(
             human_label = f"Anonymized behavioral signal {feat_name}"
             interpretable = False
 
-        factors.append({
-            "feature": feat_name,
-            "human_label": human_label,
-            "contribution": contrib,
-            "interpretable": interpretable,
-        })
+        factors.append(
+            {
+                "feature": feat_name,
+                "human_label": human_label,
+                "contribution": contrib,
+                "interpretable": interpretable,
+            }
+        )
 
     # Sort factors by absolute magnitude of contribution descending
     factors.sort(key=lambda x: abs(x["contribution"]), reverse=True)
@@ -149,8 +152,10 @@ if __name__ == "__main__":
         "V12": -3.8,
         "V10": -2.1,
     }
-    explanation = explain_transaction(transaction_id="TX-CARD-TEST", features=test_features)
+    explanation = explain_transaction(
+        transaction_id="TX-CARD-TEST", features=test_features
+    )
     import json
+
     print("Sample explanation:")
     print(json.dumps(explanation, indent=2))
-

@@ -9,7 +9,9 @@ import json
 import os
 
 
-def get_cached_answer(query: str, fixtures_path: str = "contracts/mock_data/mock_fallback_qa.json") -> Optional[Dict[str, Any]]:
+def get_cached_answer(
+    query: str, fixtures_path: str = "contracts/mock_data/mock_fallback_qa.json"
+) -> Optional[Dict[str, Any]]:
     """
     Looks up pre-cached responses for key judge questions:
     - why was this flagged
@@ -31,7 +33,9 @@ def get_cached_answer(query: str, fixtures_path: str = "contracts/mock_data/mock
                     return {
                         "response": item["response"],
                         "is_fallback": True,
-                        "fallback_notice": item.get("fallback_notice", "Using a prepared answer for this query.")
+                        "fallback_notice": item.get(
+                            "fallback_notice", "Using a prepared answer for this query."
+                        ),
                     }
     except Exception as e:
         print(f"Error loading fallback fixtures: {e}")

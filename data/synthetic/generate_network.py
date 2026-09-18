@@ -5,10 +5,12 @@ Outputs: data/synthetic/synthetic_network.json
 """
 
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 
-def generate_fatf_network(output_file: str = "data/synthetic/synthetic_network.json") -> Dict[str, Any]:
+def generate_fatf_network(
+    output_file: str = "data/synthetic/synthetic_network.json",
+) -> Dict[str, Any]:
     """
     Generates synthetic graph containing:
     1. Structuring (smurfing) clusters
@@ -20,7 +22,7 @@ def generate_fatf_network(output_file: str = "data/synthetic/synthetic_network.j
     network_data: Dict[str, Any] = {
         "nodes": [],
         "edges": [],
-        "ground_truth_typologies": []
+        "ground_truth_typologies": [],
     }
     with open(output_file, "w") as f:
         json.dump(network_data, f, indent=2)

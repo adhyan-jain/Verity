@@ -26,7 +26,33 @@ This document outlines the structure, characteristics, and handling rules for al
 
 ---
 
-## 2. Generated Synthetic Network (`data/synthetic/synthetic_network.json`)
+## 2. Production Model Benchmarks & Metrics (Fraud Engine)
+
+### 2.1 Imbalance Strategy Benchmark
+Rigorous evaluation comparing resampling vs loss re-weighting on European cardholder transactions:
+
+| Strategy | Precision | Recall | F1-Score | PR-AUC (Avg Prec) | ROC-AUC | Training Time |
+|---|---|---|---|---|---|---|
+| **Class Weighting** (`scale_pos_weight`) | 8.42% | **86.73%** | 0.1534 | 0.0742 | 0.9040 | ~4.3s |
+| **Standard SMOTE** (`ratio=1.0`) | 59.85% | 80.61% | 0.6870 | 0.7440 | 0.9134 | ~10.6s |
+| **Calibrated SMOTE + LightGBM** (`ratio=0.05` + 5-Fold CV) | **87.10%** | **82.65%** | **0.8482** | **0.8735** | **0.9798** | ~9.2s |
+
+### 2.2 Production Model Performance (Held-Out Test Set: 56,962 Records)
+* **Classifier:** Gradient Boosted Decision Trees (`LightGBM 4.7.0`)
+* **Oversampling Strategy:** Controlled SMOTE (`sampling_strategy=0.05`, generating clean synthetic boundary representations without synthetic noise)
+* **Threshold Calibration:** 5-Fold Stratified Out-of-Fold (OOF) Precision-Recall curve optimization (`calibrated_threshold = 0.7209`)
+* **Test Performance:**
+  * **Precision:** `87.10%` (minimizes costly false-positive investigations for analysts)
+  * **Recall:** `82.65%` (captures the vast majority of elusive fraud vectors)
+  * **F1-Score:** `0.8482`
+  * **PR-AUC:** `0.8735`
+  * **ROC-AUC:** `0.9798`
+* **Inference Speed:** `< 1.2ms` per transaction evaluation
+* **SHAP Explainability:** Exact tree feature attribution via `shap.TreeExplainer` computed in `< 2.5ms` per record.
+
+---
+
+## 3. Generated Synthetic Network (`data/synthetic/synthetic_network.json`)
 
 * **Purpose:** Provides a rich multi-party graph to demonstrate graph-walking capabilities and FATF typology detection algorithms.
 * **Topology Generation:**
@@ -37,7 +63,7 @@ This document outlines the structure, characteristics, and handling rules for al
 
 ---
 
-## 3. Data Governance & Git Rules
+## 4. Data Governance & Git Rules
 
 1. **Large File Exclusion:** All `.csv`, `.xlsx`, `.parquet`, and `.pkl` files in `data/raw/` are excluded via `.gitignore` to keep git operations fast and compliant with GitHub file size limits.
 2. **Directory Tracking:** Directory skeletons are tracked using `.gitkeep`.

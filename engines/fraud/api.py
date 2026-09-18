@@ -5,8 +5,10 @@ Person A: Serves get_transaction, get_shap_explanation, and counterfactual endpo
 
 import os
 import re
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional, Dict, Any, Union
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,11 +16,8 @@ from pydantic import BaseModel, Field
 
 from engines.fraud.explain import explain_transaction, load_fraud_artifact
 
-from contextlib import asynccontextmanager
-
-
 # Global dataset cache
-_DATA_DF: Optional[pd.DataFrame] = None
+_DATA_DF: pd.DataFrame | None = None
 BASE_TIMESTAMP = datetime(2026, 9, 18, 0, 0, 0, tzinfo=timezone.utc)
 
 
@@ -66,7 +65,7 @@ class FraudExplanationResponse(BaseModel):
     transaction_id: str
     risk_score: float
     verdict: str
-    top_factors: List[TopFactor]
+    top_factors: list[TopFactor]
     model_version: str
 
 
@@ -74,16 +73,16 @@ class TransactionRecordResponse(BaseModel):
     id: str
     tier: str = "real_card"
     timestamp: str
-    account_id: Optional[str] = None
+    account_id: str | None = None
     amount: float
-    direction: Optional[str] = "debit"
-    raw_narration: Optional[str] = None
+    direction: str | None = "debit"
+    raw_narration: str | None = None
     source_dataset: str = "creditcard.csv"
 
 
 class CounterfactualRequest(BaseModel):
     transaction_id: str
-    parameter_overrides: Dict[str, Union[float, int]] = Field(default_factory=dict)
+    parameter_overrides: dict[str, float | int] = Field(default_factory=dict)
 
 
 class CounterfactualResponse(BaseModel):
@@ -92,7 +91,7 @@ class CounterfactualResponse(BaseModel):
     recalculated_risk_score: float
     original_verdict: str
     recalculated_verdict: str
-    modifications: Dict[str, Any]
+    modifications: dict[str, Any]
 
 
 @asynccontextmanager
@@ -101,7 +100,7 @@ async def lifespan(app: FastAPI):
     try:
         load_fraud_artifact()
         get_dataset()
-    except Exception as e:
+    except (FileNotFoundError, KeyError, RuntimeError, ValueError) as e:
         print(f"Warning during startup initialization: {e}")
     yield
 
@@ -124,37 +123,46 @@ app.add_middleware(
 
 @app.get("/health")
 @app.get("/api/v1/fraud/health")
-def health_check() -> Dict[str, Any]:
+def health_check() -> dict[str, Any]:
     """Health check endpoint reporting engine status and artifact details."""
     artifact = load_fraud_artifact()
     return {
         "status": "healthy",
         "engine": "fraud",
-        "strategy": artifact.get("strategy", "SMOTE + LightGBM"),
-        "model_version": artifact.get("model_version", "v1.0-benchmark-winner"),
+        "strategy": artifact.get(
+            "strategy", "SMOTE (0.05) + LightGBM + 5-Fold Calibrated Threshold"
+        ),
+        "model_version": artifact.get("model_version", "v1.1-prod-calibrated"),
         "metrics": artifact.get("metrics", {}),
     }
 
 
-@app.get("/api/v1/fraud/transaction/{transaction_id}", response_model=TransactionRecordResponse)
-def get_transaction(transaction_id: str) -> Dict[str, Any]:
+@app.get(
+    "/api/v1/fraud/transaction/{transaction_id}",
+    response_model=TransactionRecordResponse,
+)
+def get_transaction(transaction_id: str) -> dict[str, Any]:
     """
     Returns TransactionRecord schema for a given card fraud transaction.
     """
     df = get_dataset()
     try:
         idx = parse_row_index(transaction_id)
-        if idx < 0 or idx >= len(df):
-            raise HTTPException(status_code=404, detail=f"Transaction index {idx} out of range (0-{len(df)-1})")
-        row = df.iloc[idx]
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=404, detail=f"Transaction {transaction_id} not found: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
+    if idx < 0 or idx >= len(df):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Transaction index {idx} out of range (valid range: 0 to {len(df) - 1})",
+        )
+
+    row = df.iloc[idx]
     timestamp_str = format_iso_timestamp(row["Time"])
     return {
-        "id": transaction_id if transaction_id.startswith("TX-CARD-") else f"TX-CARD-{idx}",
+        "id": transaction_id
+        if transaction_id.startswith("TX-CARD-")
+        else f"TX-CARD-{idx}",
         "tier": "real_card",
         "timestamp": timestamp_str,
         "account_id": None,
@@ -165,47 +173,60 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
     }
 
 
-@app.get("/api/v1/fraud/explain/{transaction_id}", response_model=FraudExplanationResponse)
-def get_shap_explanation(transaction_id: str) -> Dict[str, Any]:
+@app.get(
+    "/api/v1/fraud/explain/{transaction_id}", response_model=FraudExplanationResponse
+)
+def get_shap_explanation(transaction_id: str) -> dict[str, Any]:
     """
     Returns FraudExplanation schema with SHAP attributions.
     """
     df = get_dataset()
     try:
         idx = parse_row_index(transaction_id)
-        if idx < 0 or idx >= len(df):
-            raise HTTPException(status_code=404, detail=f"Transaction index {idx} out of range")
-        row = df.iloc[idx].to_dict()
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=404, detail=f"Transaction {transaction_id} not found: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
-    formatted_id = transaction_id if transaction_id.startswith("TX-CARD-") else f"TX-CARD-{idx}"
+    if idx < 0 or idx >= len(df):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Transaction index {idx} out of range (valid range: 0 to {len(df) - 1})",
+        )
+
+    row = df.iloc[idx].to_dict()
+    formatted_id = (
+        transaction_id if transaction_id.startswith("TX-CARD-") else f"TX-CARD-{idx}"
+    )
     explanation = explain_transaction(features=row, transaction_id=formatted_id)
     return explanation
 
 
 @app.post("/api/v1/fraud/counterfactual", response_model=CounterfactualResponse)
 @app.post("/api/v1/agent/counterfactual", response_model=CounterfactualResponse)
-def compute_counterfactual(request: CounterfactualRequest) -> Dict[str, Any]:
+def compute_counterfactual(request: CounterfactualRequest) -> dict[str, Any]:
     """
     Recalculates risk score and verdict when transaction parameters (e.g. Amount, Time) are altered.
     """
     df = get_dataset()
     try:
         idx = parse_row_index(request.transaction_id)
-        if idx < 0 or idx >= len(df):
-            raise HTTPException(status_code=404, detail=f"Transaction index {idx} out of range")
-        original_row = df.iloc[idx].to_dict()
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=404, detail=f"Transaction {request.transaction_id} not found: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
-    # Compute baseline
-    formatted_id = request.transaction_id if request.transaction_id.startswith("TX-CARD-") else f"TX-CARD-{idx}"
-    orig_explanation = explain_transaction(features=original_row, transaction_id=formatted_id)
+    if idx < 0 or idx >= len(df):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Transaction index {idx} out of range (valid range: 0 to {len(df) - 1})",
+        )
+
+    original_row = df.iloc[idx].to_dict()
+    formatted_id = (
+        request.transaction_id
+        if request.transaction_id.startswith("TX-CARD-")
+        else f"TX-CARD-{idx}"
+    )
+    orig_explanation = explain_transaction(
+        features=original_row, transaction_id=formatted_id
+    )
 
     # Apply overrides
     modified_row = original_row.copy()
@@ -213,7 +234,9 @@ def compute_counterfactual(request: CounterfactualRequest) -> Dict[str, Any]:
         modified_row[param] = float(val)
 
     # Re-compute
-    recalc_explanation = explain_transaction(features=modified_row, transaction_id=formatted_id)
+    recalc_explanation = explain_transaction(
+        features=modified_row, transaction_id=formatted_id
+    )
 
     return {
         "transaction_id": formatted_id,
@@ -230,7 +253,7 @@ def list_transactions(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     flagged_only: bool = Query(default=False),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Lists transactions with pagination and optional filter for flagged/fraud cases.
     """
@@ -245,13 +268,15 @@ def list_transactions(
 
     results = []
     for idx, row in page_df.iterrows():
-        results.append({
-            "id": f"TX-CARD-{idx}",
-            "tier": "real_card",
-            "timestamp": format_iso_timestamp(row["Time"]),
-            "amount": round(float(row["Amount"]), 2),
-            "is_ground_truth_fraud": bool(row["Class"] == 1),
-        })
+        results.append(
+            {
+                "id": f"TX-CARD-{idx}",
+                "tier": "real_card",
+                "timestamp": format_iso_timestamp(row["Time"]),
+                "amount": round(float(row["Amount"]), 2),
+                "is_ground_truth_fraud": bool(row["Class"] == 1),
+            }
+        )
 
     return {
         "total": total_count,
@@ -259,4 +284,3 @@ def list_transactions(
         "limit": limit,
         "transactions": results,
     }
-

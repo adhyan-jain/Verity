@@ -7,7 +7,9 @@ Filters out any hallucinated sentences before output reaches the dashboard.
 from typing import List, Dict, Any, Tuple
 
 
-def ground_narrative(trace_events: List[Dict[str, Any]], raw_narrative: str = "") -> Tuple[str, List[Dict[str, Any]]]:
+def ground_narrative(
+    trace_events: List[Dict[str, Any]], raw_narrative: str = ""
+) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Grounding rule: The agent's narrative field can ONLY be assembled from
     narration_sentence values that came from verified AgentTraceEvents.

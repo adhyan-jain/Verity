@@ -1,11 +1,11 @@
 import json
+
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema import validate
 
 from engines.fraud.api import app
-from engines.fraud.explain import explain_transaction, load_fraud_artifact
-from engines.fraud.benchmark_imbalance import run_benchmark
+from engines.fraud.explain import explain_transaction
 
 
 @pytest.fixture(scope="session")

@@ -4,7 +4,6 @@ Person B: Evaluates graph data and produces TypologyFlag objects.
 """
 
 from typing import List, Dict, Any
-from .fatf_rules import detect_structuring, detect_round_tripping, detect_rapid_layering
 
 
 def detect_all_typologies(network_data: Dict[str, Any]) -> List[Dict[str, Any]]:

@@ -1,0 +1,29 @@
+# .pre-commit-config.yaml
+# Production pre-commit checks for Verity codebase
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=5000']
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: pytest-fraud-engine
+        name: pytest-fraud-engine
+        entry: bash -c "PYTHONPATH=. .venv/bin/pytest tests/test_fraud_engine.py"
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -4,22 +4,24 @@ Person A: Run SMOTE vs Class Weighting comparison on recall, precision, F1, PR-A
 """
 
 import time
-from typing import Dict, Any
-import numpy as np
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import (
-    recall_score,
-    precision_score,
-    f1_score,
-    roc_auc_score,
-    average_precision_score,
-)
+from typing import Any
+
 import lightgbm as lgb
+import pandas as pd
 from imblearn.over_sampling import SMOTE
+from sklearn.metrics import (
+    average_precision_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+from sklearn.model_selection import train_test_split
 
 
-def run_benchmark(data_path: str = "data/raw/creditcard.csv", random_state: int = 42) -> Dict[str, Any]:
+def run_benchmark(
+    data_path: str = "data/raw/creditcard.csv", random_state: int = 42
+) -> dict[str, Any]:
     """
     Evaluates SMOTE vs Class-Weighting on creditcard fraud dataset.
     Returns comparison metrics to select the winner model.
@@ -41,7 +43,7 @@ def run_benchmark(data_path: str = "data/raw/creditcard.csv", random_state: int 
         random_state=random_state,
         n_estimators=100,
         verbose=-1,
-        n_jobs=-1
+        n_jobs=-1,
     )
     clf_cw.fit(X_train, y_train)
     cw_train_time = round(time.time() - t0, 3)
@@ -51,7 +53,9 @@ def run_benchmark(data_path: str = "data/raw/creditcard.csv", random_state: int 
 
     cw_metrics = {
         "recall": round(float(recall_score(y_test, y_pred_cw)), 4),
-        "precision": round(float(precision_score(y_test, y_pred_cw, zero_division=0)), 4),
+        "precision": round(
+            float(precision_score(y_test, y_pred_cw, zero_division=0)), 4
+        ),
         "f1": round(float(f1_score(y_test, y_pred_cw)), 4),
         "pr_auc": round(float(average_precision_score(y_test, y_proba_cw)), 4),
         "roc_auc": round(float(roc_auc_score(y_test, y_proba_cw)), 4),
@@ -63,10 +67,7 @@ def run_benchmark(data_path: str = "data/raw/creditcard.csv", random_state: int 
     smote = SMOTE(random_state=random_state)
     X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
     clf_smote = lgb.LGBMClassifier(
-        random_state=random_state,
-        n_estimators=100,
-        verbose=-1,
-        n_jobs=-1
+        random_state=random_state, n_estimators=100, verbose=-1, n_jobs=-1
     )
     clf_smote.fit(X_train_res, y_train_res)
     smote_train_time = round(time.time() - t0, 3)
@@ -76,14 +77,20 @@ def run_benchmark(data_path: str = "data/raw/creditcard.csv", random_state: int 
 
     smote_metrics = {
         "recall": round(float(recall_score(y_test, y_pred_smote)), 4),
-        "precision": round(float(precision_score(y_test, y_pred_smote, zero_division=0)), 4),
+        "precision": round(
+            float(precision_score(y_test, y_pred_smote, zero_division=0)), 4
+        ),
         "f1": round(float(f1_score(y_test, y_pred_smote)), 4),
         "pr_auc": round(float(average_precision_score(y_test, y_proba_smote)), 4),
         "roc_auc": round(float(roc_auc_score(y_test, y_proba_smote)), 4),
         "training_time_seconds": smote_train_time,
     }
 
-    winner = "smote" if smote_metrics["f1"] > cw_metrics["f1"] and smote_metrics["recall"] >= 0.75 else "class_weighting"
+    winner = (
+        "smote"
+        if smote_metrics["f1"] > cw_metrics["f1"] and smote_metrics["recall"] >= 0.75
+        else "class_weighting"
+    )
 
     results = {
         "dataset": data_path,
@@ -107,4 +114,5 @@ if __name__ == "__main__":
     benchmark_results = run_benchmark()
     print("Benchmark complete:")
     import json
+
     print(json.dumps(benchmark_results, indent=2))

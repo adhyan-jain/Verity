@@ -12,7 +12,9 @@ import networkx as nx
 # 3. Rapid Layering: FATF Typologies on High-Velocity Pass-Through Transfers
 
 
-def detect_structuring(graph: nx.DiGraph, threshold: float = 10000.0, window_hours: int = 24) -> List[Dict[str, Any]]:
+def detect_structuring(
+    graph: nx.DiGraph, threshold: float = 10000.0, window_hours: int = 24
+) -> List[Dict[str, Any]]:
     """
     Identifies multiple transactions just below reporting threshold within window_hours.
     """
@@ -20,7 +22,9 @@ def detect_structuring(graph: nx.DiGraph, threshold: float = 10000.0, window_hou
     return []
 
 
-def detect_round_tripping(graph: nx.DiGraph, max_cycle_length: int = 5) -> List[Dict[str, Any]]:
+def detect_round_tripping(
+    graph: nx.DiGraph, max_cycle_length: int = 5
+) -> List[Dict[str, Any]]:
     """
     Identifies directed cycles where funds return to the originator or closely linked node.
     """
@@ -28,7 +32,9 @@ def detect_round_tripping(graph: nx.DiGraph, max_cycle_length: int = 5) -> List[
     return []
 
 
-def detect_rapid_layering(graph: nx.DiGraph, min_hops: int = 3, max_hop_hours: int = 2) -> List[Dict[str, Any]]:
+def detect_rapid_layering(
+    graph: nx.DiGraph, min_hops: int = 3, max_hop_hours: int = 2
+) -> List[Dict[str, Any]]:
     """
     Identifies rapid pass-through chains transferring high proportion of inbound funds quickly.
     """
