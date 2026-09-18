@@ -342,9 +342,12 @@ export type AmlQueueItem = {
 
 export type AmlQueueResponse = {
   total_records: number;
-  returned_records: number;
-  model_used: string;
-  conformal_coverage: number;
+  returned_records?: number;
+  total_pages?: number;
+  current_page?: number;
+  page_size?: number;
+  model_used?: string;
+  conformal_coverage?: number;
   records: AmlQueueItem[];
 };
 
@@ -363,6 +366,9 @@ export type AmlTimelineItem = {
 export type AmlTimelineResponse = {
   account_id: string;
   total_txns: number;
+  total_pages?: number;
+  current_page?: number;
+  page_size?: number;
   flagged_count: number;
   timeline: AmlTimelineItem[];
 };
@@ -702,8 +708,10 @@ export function getAmlTimelineFixture(accountId: string): AmlTimelineResponse {
 }
 
 export async function fetchAmlQueue(
-  topN: number = 25,
+  topN: number = 100,
   withAdjudication: boolean = false,
+  page: number = 1,
+  pageSize?: number,
 ): Promise<AmlQueueResponse> {
   try {
     const res = await fetchJson<AmlQueueResponse>(
@@ -716,6 +724,8 @@ export async function fetchAmlQueue(
           confidence: 0.90,
           with_conformal: true,
           with_adjudication: withAdjudication,
+          page,
+          page_size: pageSize,
         }),
       },
       REQUEST_TIMEOUT_MS,
@@ -727,16 +737,27 @@ export async function fetchAmlQueue(
   return {
     total_records: DEFAULT_AML_QUEUE.length,
     returned_records: DEFAULT_AML_QUEUE.length,
+    total_pages: 1,
+    current_page: 1,
+    page_size: DEFAULT_AML_QUEUE.length,
     model_used: "RandomForest (Champion: 0.8409 Macro-F1)",
     conformal_coverage: 0.90,
     records: DEFAULT_AML_QUEUE,
   };
 }
 
-export async function fetchAmlTimeline(accountId: string): Promise<AmlTimelineResponse> {
+export async function fetchAmlTimeline(
+  accountId: string,
+  page: number = 1,
+  pageSize?: number,
+): Promise<AmlTimelineResponse> {
   try {
+    const params = new URLSearchParams();
+    if (page > 1) params.set("page", String(page));
+    if (pageSize) params.set("page_size", String(pageSize));
+    const qs = params.toString() ? `?${params.toString()}` : "";
     const res = await fetchJson<AmlTimelineResponse>(
-      `${AGENT_BASE}/api/v1/aml/timeline/${encodeURIComponent(accountId)}`,
+      `${AGENT_BASE}/api/v1/aml/timeline/${encodeURIComponent(accountId)}${qs}`,
       {
         headers: { "X-API-Key": AGENT_API_KEY },
       },

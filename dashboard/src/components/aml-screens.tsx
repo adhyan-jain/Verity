@@ -8,7 +8,10 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   CircleDot,
   Clock,
   Code2,
@@ -55,6 +58,118 @@ import {
 } from "../lib/api-client";
 
 // ============================================================================
+// Reusable Deterministic Pagination Control Component
+// ============================================================================
+export function PaginationControl({
+  currentPage,
+  totalPages,
+  totalItems,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+  pageSizeOptions = [5, 10, 25],
+  itemLabel = "items",
+  compact = false,
+}: {
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  pageSizeOptions?: number[];
+  itemLabel?: string;
+  compact?: boolean;
+}) {
+  if (totalItems === 0) return null;
+
+  const safePage = Math.min(Math.max(1, currentPage), Math.max(1, totalPages));
+  const startIdx = Math.min((safePage - 1) * pageSize + 1, totalItems);
+  const endIdx = Math.min(safePage * pageSize, totalItems);
+
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-ink/10 bg-paper/70 text-xs font-mono shrink-0 select-none">
+      {/* Range Counter */}
+      <div className="text-[11px] text-muted-foreground truncate">
+        Showing <span className="font-bold text-ink">{startIdx}</span>–<span className="font-bold text-ink">{endIdx}</span> of{" "}
+        <span className="font-bold text-ink">{totalItems}</span> {itemLabel}
+      </div>
+
+      {/* Navigation Controls */}
+      <div className="flex items-center gap-1 shrink-0">
+        {onPageSizeChange && pageSizeOptions && pageSizeOptions.length > 1 && !compact && (
+          <div className="hidden sm:flex items-center gap-1 mr-2 text-[10px] text-muted-foreground">
+            <span>Size:</span>
+            <div className="flex items-center rounded border border-ink/10 bg-panel overflow-hidden">
+              {pageSizeOptions.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => onPageSizeChange(opt)}
+                  className={`px-1.5 py-0.5 text-[10px] transition ${
+                    pageSize === opt
+                      ? "bg-signal text-signal-foreground font-bold"
+                      : "hover:bg-ink/5 text-ink"
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => onPageChange(1)}
+          disabled={safePage <= 1}
+          title="First page"
+          className="rounded p-1 text-ink border border-ink/10 bg-panel hover:bg-ink/5 disabled:opacity-30 disabled:pointer-events-none transition"
+        >
+          <ChevronsLeft className="size-3" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onPageChange(safePage - 1)}
+          disabled={safePage <= 1}
+          title="Previous page"
+          className="rounded p-1 text-ink border border-ink/10 bg-panel hover:bg-ink/5 disabled:opacity-30 disabled:pointer-events-none transition flex items-center gap-0.5"
+        >
+          <ChevronLeft className="size-3" />
+          {!compact && <span className="text-[10px] pr-0.5 hidden md:inline">Prev</span>}
+        </button>
+
+        <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-ink/5 text-ink border border-ink/10">
+          {safePage} / {totalPages}
+        </span>
+
+        <button
+          type="button"
+          onClick={() => onPageChange(safePage + 1)}
+          disabled={safePage >= totalPages}
+          title="Next page"
+          className="rounded p-1 text-ink border border-ink/10 bg-panel hover:bg-ink/5 disabled:opacity-30 disabled:pointer-events-none transition flex items-center gap-0.5"
+        >
+          {!compact && <span className="text-[10px] pl-0.5 hidden md:inline">Next</span>}
+          <ChevronRight className="size-3" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onPageChange(totalPages)}
+          disabled={safePage >= totalPages}
+          title="Last page"
+          className="rounded p-1 text-ink border border-ink/10 bg-panel hover:bg-ink/5 disabled:opacity-30 disabled:pointer-events-none transition"
+        >
+          <ChevronsRight className="size-3" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Screen 1 (Column 1): Ranked Flagged Risk Queue
 // ============================================================================
 export function AmlQueueColumn({
@@ -68,6 +183,12 @@ export function AmlQueueColumn({
   const [loading, setLoading] = useState(true);
   const [filterSeverity, setFilterSeverity] = useState<"all" | "high" | "medium">("all");
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterSeverity]);
 
   useEffect(() => {
     let mounted = true;
@@ -126,6 +247,11 @@ export function AmlQueueColumn({
 
   const highCount = normalizedItems.filter((i) => i.risk_score >= 0.7).length;
   const medCount = normalizedItems.filter((i) => i.risk_score < 0.7 && i.risk_score >= 0.4).length;
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const paginatedItems = filteredItems.slice(startIndex, startIndex + pageSize);
 
   return (
     <div className="flex flex-col h-full rounded-xl border border-ink/10 bg-panel shadow-soft overflow-hidden">
@@ -214,7 +340,7 @@ export function AmlQueueColumn({
             No accounts match the current filter.
           </div>
         ) : (
-          filteredItems.map((item) => {
+          paginatedItems.map((item) => {
             const isSelected = selectedAccountId === item.account_id;
             const isCritical = item.risk_score >= 0.7;
             const isSmurfing = item.account_id === "409000493210";
@@ -309,11 +435,21 @@ export function AmlQueueColumn({
         )}
       </div>
 
-      {/* Footer Info */}
-      <div className="p-2.5 border-t border-ink/10 bg-paper/40 text-[9px] font-mono text-muted-foreground flex items-center justify-between shrink-0">
-        <span>Gate 1 Date-Only Verified</span>
-        <span>Split-Conformal 90%</span>
-      </div>
+      {/* Pagination Controls Bar */}
+      <PaginationControl
+        currentPage={safePage}
+        totalPages={totalPages}
+        totalItems={filteredItems.length}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(sz) => {
+          setPageSize(sz);
+          setCurrentPage(1);
+        }}
+        pageSizeOptions={[5, 10, 25]}
+        itemLabel="accounts"
+        compact={false}
+      />
     </div>
   );
 }
@@ -345,12 +481,23 @@ export function CustomerWorkbenchColumn({
   const [traceLoading, setTraceLoading] = useState(true);
   const [selectedStep, setSelectedStep] = useState<AmlTraceStep | null>(null);
 
+  // Pagination States
+  const [timelinePage, setTimelinePage] = useState(1);
+  const [timelinePageSize, setTimelinePageSize] = useState(10);
+  const [breakdownPage, setBreakdownPage] = useState(1);
+  const breakdownPageSize = 3;
+  const [tracePage, setTracePage] = useState(1);
+  const tracePageSize = 4;
+
   useEffect(() => {
     let mounted = true;
     setTimelineLoading(true);
     setBreakdownLoading(true);
     setTraceLoading(true);
     setActionStatus(null);
+    setTimelinePage(1);
+    setBreakdownPage(1);
+    setTracePage(1);
 
     fetchAmlTimeline(accountId).then((res) => {
       if (!mounted) return;
@@ -376,8 +523,29 @@ export function CustomerWorkbenchColumn({
     };
   }, [accountId]);
 
+  useEffect(() => {
+    setTimelinePage(1);
+  }, [flaggedOnly]);
+
   const displayedTxns = flaggedOnly ? timelineData.filter((t) => t.flagged) : timelineData;
   const flaggedCount = timelineData.filter((t) => t.flagged).length;
+
+  const totalTimelinePages = Math.max(1, Math.ceil(displayedTxns.length / timelinePageSize));
+  const safeTimelinePage = Math.min(Math.max(1, timelinePage), totalTimelinePages);
+  const timelineStart = (safeTimelinePage - 1) * timelinePageSize;
+  const paginatedTxns = displayedTxns.slice(timelineStart, timelineStart + timelinePageSize);
+
+  const claims = breakdown?.claims || [];
+  const totalBreakdownPages = Math.max(1, Math.ceil(claims.length / breakdownPageSize));
+  const safeBreakdownPage = Math.min(Math.max(1, breakdownPage), totalBreakdownPages);
+  const breakdownStart = (safeBreakdownPage - 1) * breakdownPageSize;
+  const paginatedClaims = claims.slice(breakdownStart, breakdownStart + breakdownPageSize);
+
+  const traceSteps = traceData?.trace_steps || [];
+  const totalTracePages = Math.max(1, Math.ceil(traceSteps.length / tracePageSize));
+  const safeTracePage = Math.min(Math.max(1, tracePage), totalTracePages);
+  const traceStart = (safeTracePage - 1) * tracePageSize;
+  const paginatedTraceSteps = traceSteps.slice(traceStart, traceStart + tracePageSize);
 
   const handleAction = (label: string) => {
     setActionStatus(label);
@@ -511,86 +679,101 @@ export function CustomerWorkbenchColumn({
       </div>
 
       {/* Main Tab Content */}
-      <div className="flex-1 overflow-y-auto p-4 min-h-0">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* ================================================================= */}
         {/* TAB 1: Timeline (Screen 2) */}
         {/* ================================================================= */}
         {activeTab === "timeline" && (
-          <div className="space-y-2.5">
-            {timelineLoading ? (
-              <div className="p-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                <RefreshCw className="size-4 animate-spin text-signal" />
-                <span>Loading ledger transaction timeline...</span>
-              </div>
-            ) : displayedTxns.length === 0 ? (
-              <div className="p-8 text-center text-xs text-muted-foreground">
-                No ledger transactions found for this view filter.
-              </div>
-            ) : (
-              displayedTxns.map((tx) => {
-                const isFlagged = tx.flagged;
-                const isPrimary = tx.id === primaryTxId;
-                const isDebit = tx.direction === "debit";
+          <div className="flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-4 space-y-2.5 min-h-0">
+              {timelineLoading ? (
+                <div className="p-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                  <RefreshCw className="size-4 animate-spin text-signal" />
+                  <span>Loading ledger transaction timeline...</span>
+                </div>
+              ) : displayedTxns.length === 0 ? (
+                <div className="p-8 text-center text-xs text-muted-foreground">
+                  No ledger transactions found for this view filter.
+                </div>
+              ) : (
+                paginatedTxns.map((tx) => {
+                  const isFlagged = tx.flagged;
+                  const isPrimary = tx.id === primaryTxId;
+                  const isDebit = tx.direction === "debit";
 
-                return (
-                  <div
-                    key={tx.id}
-                    className={`rounded-lg border p-3 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                      isFlagged
-                        ? "bg-red-500/10 border-red-500/40 shadow-sm"
-                        : isPrimary
-                        ? "bg-teal/10 border-teal/40"
-                        : "bg-paper/40 border-ink/10 hover:bg-ink/5"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3 min-w-0">
-                      <div className="mt-0.5 font-mono text-xs font-semibold text-muted-foreground shrink-0 w-24">
-                        {tx.timestamp ? String(tx.timestamp).slice(0, 10) : "2019-02-12"}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono text-xs font-bold text-ink">{tx.id || "TX-LEDGER"}</span>
-                          <span
-                            className={`rounded px-1.5 py-0.2 font-mono text-[9px] uppercase font-bold ${
-                              isDebit
-                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                                : "bg-teal/15 text-teal"
-                            }`}
-                          >
-                            {(tx.direction || "debit").toUpperCase()}
-                          </span>
-                          <span className="rounded bg-ink/5 px-1.5 py-0.2 font-mono text-[9px] text-muted-foreground">
-                            {tx.payment_rail || "NEFT"}
-                          </span>
-                          {isFlagged && (
-                            <span className="inline-flex items-center gap-1 rounded bg-red-600 text-white px-2 py-0.2 font-mono text-[9px] font-bold uppercase shadow-sm">
-                              <AlertCircle className="size-2.5" /> Flagged Anomaly
+                  return (
+                    <div
+                      key={tx.id}
+                      className={`rounded-lg border p-3 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isFlagged
+                          ? "bg-red-500/10 border-red-500/40 shadow-sm"
+                          : isPrimary
+                          ? "bg-teal/10 border-teal/40"
+                          : "bg-paper/40 border-ink/10 hover:bg-ink/5"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="mt-0.5 font-mono text-xs font-semibold text-muted-foreground shrink-0 w-24">
+                          {tx.timestamp ? String(tx.timestamp).slice(0, 10) : "2019-02-12"}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-xs font-bold text-ink">{tx.id || "TX-LEDGER"}</span>
+                            <span
+                              className={`rounded px-1.5 py-0.2 font-mono text-[9px] uppercase font-bold ${
+                                isDebit
+                                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                                  : "bg-teal/15 text-teal"
+                              }`}
+                            >
+                              {(tx.direction || "debit").toUpperCase()}
                             </span>
-                          )}
-                        </div>
-                        <div className="mt-1 text-xs text-ink/80 truncate max-w-xl">
-                          {tx.narration || "Bank ledger transaction record"}
+                            <span className="rounded bg-ink/5 px-1.5 py-0.2 font-mono text-[9px] text-muted-foreground">
+                              {tx.payment_rail || "NEFT"}
+                            </span>
+                            {isFlagged && (
+                              <span className="inline-flex items-center gap-1 rounded bg-red-600 text-white px-2 py-0.2 font-mono text-[9px] font-bold uppercase shadow-sm">
+                                <AlertCircle className="size-2.5" /> Flagged Anomaly
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 text-xs text-ink/80 truncate max-w-xl">
+                            {tx.narration || "Bank ledger transaction record"}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="flex sm:flex-col items-end justify-between sm:justify-center shrink-0">
-                      <div
-                        className={`font-mono text-sm font-extrabold ${
-                          isDebit ? "text-red-600 dark:text-red-400" : "text-teal"
-                        }`}
-                      >
-                        {isDebit ? "-" : "+"}₹
-                        {(tx.amount ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                      </div>
-                      <div className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                        Bal: ₹{(tx.balance ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      <div className="flex sm:flex-col items-end justify-between sm:justify-center shrink-0">
+                        <div
+                          className={`font-mono text-sm font-extrabold ${
+                            isDebit ? "text-red-600 dark:text-red-400" : "text-teal"
+                          }`}
+                        >
+                          {isDebit ? "-" : "+"}₹
+                          {(tx.amount ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                        </div>
+                        <div className="font-mono text-[10px] text-muted-foreground mt-0.5">
+                          Bal: ₹{(tx.balance ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })
-            )}
+                  );
+                })
+              )}
+            </div>
+            <PaginationControl
+              currentPage={safeTimelinePage}
+              totalPages={totalTimelinePages}
+              totalItems={displayedTxns.length}
+              pageSize={timelinePageSize}
+              onPageChange={setTimelinePage}
+              onPageSizeChange={(sz) => {
+                setTimelinePageSize(sz);
+                setTimelinePage(1);
+              }}
+              pageSizeOptions={[10, 25, 50]}
+              itemLabel="transactions"
+            />
           </div>
         )}
 
@@ -598,72 +781,85 @@ export function CustomerWorkbenchColumn({
         {/* TAB 2: Breakdown Panel (Screen 3) */}
         {/* ================================================================= */}
         {activeTab === "breakdown" && (
-          <div className="space-y-4">
-            {breakdownLoading ? (
-              <div className="p-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                <RefreshCw className="size-4 animate-spin text-signal" />
-                <span>Computing tagged SHAP and statistical risk attributions...</span>
-              </div>
-            ) : !breakdown || breakdown.claims.length === 0 ? (
-              <div className="p-8 text-center text-xs text-muted-foreground">
-                No feature attribution claims recorded for this account.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="rounded-lg border border-ink/10 bg-paper/60 p-3.5 flex items-center justify-between">
-                  <div>
-                    <div className="text-[10px] font-mono uppercase text-muted-foreground">
-                      Attribution Profile
-                    </div>
-                    <div className="font-display text-base font-extrabold text-ink">
-                      Evidence-Tagged Risk Drivers
-                    </div>
-                  </div>
-                  <div className="text-right font-mono text-xs">
-                    <div className="text-signal font-bold">Risk Score: {(breakdown.risk_score ?? 0.82).toFixed(2)}</div>
-                    <div className="text-[10px] text-muted-foreground">{breakdown.total_claims ?? (breakdown.claims?.length || 0)} Verified Claims</div>
-                  </div>
+          <div className="flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+              {breakdownLoading ? (
+                <div className="p-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                  <RefreshCw className="size-4 animate-spin text-signal" />
+                  <span>Computing tagged SHAP and statistical risk attributions...</span>
                 </div>
-
-                {breakdown.claims.map((claim) => (
-                  <div
-                    key={claim.claim_id}
-                    className="rounded-lg border border-ink/10 bg-paper/40 p-4 space-y-2.5 transition hover:border-signal/40"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/5 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="rounded bg-signal/15 text-signal font-mono text-[10px] font-bold px-2 py-0.5 border border-signal/20">
-                          {claim.source_tag}
-                        </span>
-                        <span className="font-mono text-xs font-semibold text-ink">
-                          {claim.feature_name}
-                        </span>
+              ) : !breakdown || claims.length === 0 ? (
+                <div className="p-8 text-center text-xs text-muted-foreground">
+                  No feature attribution claims recorded for this account.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-ink/10 bg-paper/60 p-3.5 flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono uppercase text-muted-foreground">
+                        Attribution Profile
                       </div>
-                      <div className="flex items-center gap-1 font-mono text-xs font-bold text-signal">
-                        <span>Contribution:</span>
-                        <span className="font-black">+{(claim.contribution ?? 0).toFixed(2)}</span>
+                      <div className="font-display text-base font-extrabold text-ink">
+                        Evidence-Tagged Risk Drivers
                       </div>
                     </div>
-
-                    {/* Visual Progress Bar */}
-                    <div className="h-1.5 w-full bg-ink/10 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-signal rounded-full"
-                        style={{ width: `${Math.min(100, Math.max(15, claim.contribution * 100))}%` }}
-                      />
-                    </div>
-
-                    <p className="text-xs text-ink leading-relaxed pt-0.5">
-                      {claim.sentence}
-                    </p>
-
-                    <div className="flex items-center justify-between text-[10px] font-mono text-muted-foreground bg-ink/5 rounded px-2.5 py-1">
-                      <span>Evidence Metric: {claim.evidence_stat}</span>
-                      <span className="text-teal font-semibold">Strict Date-Only Verified</span>
+                    <div className="text-right font-mono text-xs">
+                      <div className="text-signal font-bold">Risk Score: {(breakdown.risk_score ?? 0.82).toFixed(2)}</div>
+                      <div className="text-[10px] text-muted-foreground">{breakdown.total_claims ?? claims.length} Verified Claims</div>
                     </div>
                   </div>
-                ))}
-              </div>
+
+                  {paginatedClaims.map((claim) => (
+                    <div
+                      key={claim.claim_id}
+                      className="rounded-lg border border-ink/10 bg-paper/40 p-4 space-y-2.5 transition hover:border-signal/40"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/5 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-signal/15 text-signal font-mono text-[10px] font-bold px-2 py-0.5 border border-signal/20">
+                            {claim.source_tag}
+                          </span>
+                          <span className="font-mono text-xs font-semibold text-ink">
+                            {claim.feature_name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 font-mono text-xs font-bold text-signal">
+                          <span>Contribution:</span>
+                          <span className="font-black">+{(claim.contribution ?? 0).toFixed(2)}</span>
+                        </div>
+                      </div>
+
+                      {/* Visual Progress Bar */}
+                      <div className="h-1.5 w-full bg-ink/10 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-signal rounded-full"
+                          style={{ width: `${Math.min(100, Math.max(15, claim.contribution * 100))}%` }}
+                        />
+                      </div>
+
+                      <p className="text-xs text-ink leading-relaxed pt-0.5">
+                        {claim.sentence}
+                      </p>
+
+                      <div className="flex items-center justify-between text-[10px] font-mono text-muted-foreground bg-ink/5 rounded px-2.5 py-1">
+                        <span>Evidence Metric: {claim.evidence_stat}</span>
+                        <span className="text-teal font-semibold">Strict Date-Only Verified</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {claims.length > breakdownPageSize && (
+              <PaginationControl
+                currentPage={safeBreakdownPage}
+                totalPages={totalBreakdownPages}
+                totalItems={claims.length}
+                pageSize={breakdownPageSize}
+                onPageChange={setBreakdownPage}
+                itemLabel="claims"
+                compact={true}
+              />
             )}
           </div>
         )}
@@ -672,124 +868,137 @@ export function CustomerWorkbenchColumn({
         {/* TAB 3: Agent Trace & Live Trust (Screen 4) */}
         {/* ================================================================= */}
         {activeTab === "trace" && (
-          <div className="space-y-4">
-            {traceLoading ? (
-              <div className="p-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                <RefreshCw className="size-4 animate-spin text-signal" />
-                <span>Verifying agent reasoning steps and grounding tags...</span>
-              </div>
-            ) : !traceData ? (
-              <div className="p-8 text-center text-xs text-muted-foreground">
-                No trace records found.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Hero Live Trust Score Banner (Step 6) */}
-                <div className="rounded-xl border border-teal/40 bg-teal/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-soft">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="size-4 text-teal" />
-                      <span className="font-mono text-xs font-bold uppercase tracking-wider text-teal">
-                        Live Trust Score (Step 6)
-                      </span>
-                    </div>
-                    <div className="font-display text-2xl font-black text-teal">
-                      {(traceData.live_trust_score?.grounded_percentage ?? 100).toFixed(0)}% Verified Grounded
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {traceData.live_trust_score?.summary ?? "All reasoning claims verified against underlying ledger state."}
-                    </div>
-                  </div>
-                  <div className="text-right font-mono text-xs space-y-1">
-                    <div className="rounded bg-teal/20 px-2 py-1 font-bold text-teal inline-block">
-                      {traceData.live_trust_score?.grounded_claims ?? 4} / {traceData.live_trust_score?.total_claims ?? 4} Claims Grounded
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">Zero Code Hallucinations</div>
-                  </div>
+          <div className="flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+              {traceLoading ? (
+                <div className="p-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                  <RefreshCw className="size-4 animate-spin text-signal" />
+                  <span>Verifying agent reasoning steps and grounding tags...</span>
                 </div>
-
-                {/* Split Trace Steps & Query Inspector */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  {/* Step List */}
-                  <div className="space-y-2">
-                    <div className="text-[11px] font-mono uppercase text-muted-foreground px-1">
-                      Reasoning Execution Sequence
+              ) : !traceData ? (
+                <div className="p-8 text-center text-xs text-muted-foreground">
+                  No trace records found.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Hero Live Trust Score Banner (Step 6) */}
+                  <div className="rounded-xl border border-teal/40 bg-teal/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-soft">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="size-4 text-teal" />
+                        <span className="font-mono text-xs font-bold uppercase tracking-wider text-teal">
+                          Live Trust Score (Step 6)
+                        </span>
+                      </div>
+                      <div className="font-display text-2xl font-black text-teal">
+                        {(traceData.live_trust_score?.grounded_percentage ?? 100).toFixed(0)}% Verified Grounded
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {traceData.live_trust_score?.summary ?? "All reasoning claims verified against underlying ledger state."}
+                      </div>
                     </div>
-                    {traceData.trace_steps.map((step) => {
-                      const isSelected = selectedStep?.event_id === step.event_id;
-                      return (
-                        <div
-                          key={step.event_id}
-                          onClick={() => setSelectedStep(step)}
-                          className={`p-3 rounded-lg border cursor-pointer transition ${
-                            isSelected
-                              ? "bg-signal/10 border-signal shadow-sm"
-                              : "bg-paper/40 border-ink/10 hover:bg-ink/5"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="flex size-5 items-center justify-center rounded-full bg-ink/10 font-mono text-[10px] font-bold text-ink">
-                                {step.step_index}
-                              </span>
-                              <span className="font-mono text-xs font-bold text-ink">
-                                {step.tool_called}
+                    <div className="text-right font-mono text-xs space-y-1">
+                      <div className="rounded bg-teal/20 px-2 py-1 font-bold text-teal inline-block">
+                        {traceData.live_trust_score?.grounded_claims ?? 4} / {traceData.live_trust_score?.total_claims ?? 4} Claims Grounded
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">Zero Code Hallucinations</div>
+                    </div>
+                  </div>
+
+                  {/* Split Trace Steps & Query Inspector */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    {/* Step List */}
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-mono uppercase text-muted-foreground px-1">
+                        Reasoning Execution Sequence
+                      </div>
+                      {paginatedTraceSteps.map((step) => {
+                        const isSelected = selectedStep?.event_id === step.event_id;
+                        return (
+                          <div
+                            key={step.event_id}
+                            onClick={() => setSelectedStep(step)}
+                            className={`p-3 rounded-lg border cursor-pointer transition ${
+                              isSelected
+                                ? "bg-signal/10 border-signal shadow-sm"
+                                : "bg-paper/40 border-ink/10 hover:bg-ink/5"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="flex size-5 items-center justify-center rounded-full bg-ink/10 font-mono text-[10px] font-bold text-ink">
+                                  {step.step_index}
+                                </span>
+                                <span className="font-mono text-xs font-bold text-ink">
+                                  {step.tool_called}
+                                </span>
+                              </div>
+                              <span
+                                className={`rounded px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase ${
+                                  step.is_grounded
+                                    ? "bg-teal/15 text-teal border border-teal/30"
+                                    : "bg-red-500/15 text-red-600 border border-red-500/30"
+                                }`}
+                              >
+                                {step.is_grounded ? "✓ Grounded" : "✗ Ungrounded"}
                               </span>
                             </div>
-                            <span
-                              className={`rounded px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase ${
-                                step.is_grounded
-                                  ? "bg-teal/15 text-teal border border-teal/30"
-                                  : "bg-red-500/15 text-red-600 border border-red-500/30"
-                              }`}
-                            >
-                              {step.is_grounded ? "✓ Grounded" : "✗ Ungrounded"}
-                            </span>
+                            <div className="mt-1.5 text-xs text-ink/80 leading-relaxed">
+                              {step.narration_sentence}
+                            </div>
                           </div>
-                          <div className="mt-1.5 text-xs text-ink/80 leading-relaxed">
-                            {step.narration_sentence}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Query Inspector Drawer */}
-                  <div className="rounded-lg border border-ink/10 bg-paper/70 p-3.5 font-mono text-xs flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between border-b border-ink/10 pb-2 text-[10px] uppercase text-muted-foreground">
-                        <span className="flex items-center gap-1.5 text-signal font-bold">
-                          <Code2 className="size-3.5" /> Tool Query Payload
-                        </span>
-                        <span>{selectedStep?.event_id}</span>
-                      </div>
-                      {selectedStep ? (
-                        <div className="mt-2.5 space-y-2">
-                          <div className="text-xs font-semibold text-ink">
-                            Tool: <code className="text-signal">{selectedStep.tool_called}</code>
-                          </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            Action: {selectedStep.action_description}
-                          </div>
-                          <div className="mt-2">
-                            <pre className="max-h-56 overflow-auto rounded-lg bg-ink/95 p-3 text-[10px] text-paper/90 leading-relaxed">
-                              {JSON.stringify(selectedStep.query_result, null, 2)}
-                            </pre>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="p-8 text-center text-muted-foreground text-xs">
-                          Click any reasoning step on the left to inspect its raw JSON payload.
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
-                    <div className="mt-3 pt-2 border-t border-ink/10 text-[9px] uppercase text-muted-foreground flex justify-between">
-                      <span>Auditable Deterministic Output</span>
-                      <span>Verified</span>
+
+                    {/* Query Inspector Drawer */}
+                    <div className="rounded-lg border border-ink/10 bg-paper/70 p-3.5 font-mono text-xs flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between border-b border-ink/10 pb-2 text-[10px] uppercase text-muted-foreground">
+                          <span className="flex items-center gap-1.5 text-signal font-bold">
+                            <Code2 className="size-3.5" /> Tool Query Payload
+                          </span>
+                          <span>{selectedStep?.event_id}</span>
+                        </div>
+                        {selectedStep ? (
+                          <div className="mt-2.5 space-y-2">
+                            <div className="text-xs font-semibold text-ink">
+                              Tool: <code className="text-signal">{selectedStep.tool_called}</code>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              Action: {selectedStep.action_description}
+                            </div>
+                            <div className="mt-2">
+                              <pre className="max-h-56 overflow-auto rounded-lg bg-ink/95 p-3 text-[10px] text-paper/90 leading-relaxed">
+                                {JSON.stringify(selectedStep.query_result, null, 2)}
+                              </pre>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-8 text-center text-muted-foreground text-xs">
+                            Click any reasoning step on the left to inspect its raw JSON payload.
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-ink/10 text-[9px] uppercase text-muted-foreground flex justify-between">
+                        <span>Auditable Deterministic Output</span>
+                        <span>Verified</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
+            </div>
+            {traceSteps.length > tracePageSize && (
+              <PaginationControl
+                currentPage={safeTracePage}
+                totalPages={totalTracePages}
+                totalItems={traceSteps.length}
+                pageSize={tracePageSize}
+                onPageChange={setTracePage}
+                itemLabel="steps"
+                compact={true}
+              />
             )}
           </div>
         )}

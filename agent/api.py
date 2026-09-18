@@ -351,6 +351,8 @@ class QueueRequest(BaseModel):
     confidence: float = Field(default=0.90, description="Conformal coverage level")
     with_conformal: bool = Field(default=True, description="Attach conformal intervals")
     with_adjudication: bool = Field(default=False, description="Run P/D agent pass")
+    page: int = Field(default=1, description="1-indexed page number")
+    page_size: int | None = Field(default=None, description="Optional page size for server-side pagination")
 
 
 @app.post("/api/v1/aml/queue", dependencies=[Depends(require_api_key)])
@@ -365,10 +367,26 @@ def get_flagged_queue_endpoint(req: QueueRequest) -> dict[str, Any]:
     prewarmed = _get_prewarmed_cache()
     if prewarmed and "queue" in prewarmed and prewarmed["queue"]:
         records = prewarmed["queue"][:req.top_n]
+        total_records = len(records)
+        if req.page_size is not None and req.page_size > 0:
+            page_sz = req.page_size
+            tot_pages = max(1, (total_records + page_sz - 1) // page_sz)
+            cur_page = min(max(1, req.page), tot_pages)
+            start = (cur_page - 1) * page_sz
+            paged = records[start : start + page_sz]
+        else:
+            page_sz = total_records
+            tot_pages = 1
+            cur_page = 1
+            paged = records
         return {
             "total_flagged": len(prewarmed["queue"]),
-            "returned": len(records),
-            "records": records,
+            "total_records": total_records,
+            "total_pages": tot_pages,
+            "current_page": cur_page,
+            "page_size": page_sz,
+            "returned": len(paged),
+            "records": paged,
         }
 
     bank_df = _get_bank_df()
@@ -421,17 +439,31 @@ def get_flagged_queue_endpoint(req: QueueRequest) -> dict[str, Any]:
                 from .breakdown import detect_structuring
                 _structuring_cache = detect_structuring(bank_df)
         from agent.prosecutor_defender import adjudicate_queue
-        adjudicated = adjudicate_queue(records, bank_df, _structuring_cache)
-        return {
-            "total_flagged": len(_flagged_queue_cache),
-            "returned": len(adjudicated),
-            "records": adjudicated,
-        }
+        target_records = adjudicated
+    else:
+        target_records = records
+
+    total_records = len(target_records)
+    if req.page_size is not None and req.page_size > 0:
+        page_sz = req.page_size
+        tot_pages = max(1, (total_records + page_sz - 1) // page_sz)
+        cur_page = min(max(1, req.page), tot_pages)
+        start = (cur_page - 1) * page_sz
+        paged = target_records[start : start + page_sz]
+    else:
+        page_sz = total_records
+        tot_pages = 1
+        cur_page = 1
+        paged = target_records
 
     return {
-        "total_flagged": len(_flagged_queue_cache),
-        "returned": len(records),
-        "records": records,
+        "total_flagged": len(_flagged_queue_cache) if _flagged_queue_cache else total_records,
+        "total_records": total_records,
+        "total_pages": tot_pages,
+        "current_page": cur_page,
+        "page_size": page_sz,
+        "returned": len(paged),
+        "records": paged,
     }
 
 
@@ -600,10 +632,13 @@ def get_conformal_interval(req: ConformalRequest) -> dict[str, Any]:
 def get_customer_timeline(
     account_id: str,
     with_flags: bool = True,
+    page: int = 1,
+    page_size: int | None = None,
 ) -> dict[str, Any]:
     """
     Screen 2 — Full transaction timeline for an account from bank.xlsx,
     with flagged transactions highlighted inline (flagged field per row).
+    Supports optional page and page_size pagination.
     """
     global _flagged_queue_cache
     bank_df = _get_bank_df()
@@ -638,11 +673,26 @@ def get_customer_timeline(
             "risk_score":   flagged_scores.get(tx_id),
         })
 
+    total_txns = len(timeline)
+    if page_size is not None and page_size > 0:
+        tot_pages = max(1, (total_txns + page_size - 1) // page_size)
+        cur_page = min(max(1, page), tot_pages)
+        start = (cur_page - 1) * page_size
+        paged_timeline = timeline[start : start + page_size]
+    else:
+        tot_pages = 1
+        cur_page = 1
+        page_size = total_txns
+        paged_timeline = timeline
+
     return {
         "account_id":   account_id,
-        "total_txns":   len(timeline),
+        "total_txns":   total_txns,
+        "total_pages":  tot_pages,
+        "current_page": cur_page,
+        "page_size":    page_size,
         "flagged_count": len(flagged_ids),
-        "timeline":     timeline,
+        "timeline":     paged_timeline,
     }
 
 

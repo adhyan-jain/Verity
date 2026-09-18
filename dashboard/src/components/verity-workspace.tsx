@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 import { useEffect, useMemo, useState } from "react";
-import { UnifiedAmlCockpit } from "./aml-screens";
+import { UnifiedAmlCockpit, PaginationControl } from "./aml-screens";
 import {
   checkEnginesHealth,
   askCounterfactualOrChat,
@@ -270,11 +270,22 @@ function CaseRail({
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const [casePage, setCasePage] = useState(1);
+  const casePageSize = 3;
+
+  useEffect(() => {
+    setCasePage(1);
+  }, [filter, search]);
+
   const cases = CASES.filter(
     (item) =>
       (filter === "all" || item.tier === filter) &&
       `${item.id} ${item.title}`.toLowerCase().includes(search.toLowerCase()),
   );
+
+  const totalCasePages = Math.max(1, Math.ceil(cases.length / casePageSize));
+  const safeCasePage = Math.min(Math.max(1, casePage), totalCasePages);
+  const paginatedCases = cases.slice((safeCasePage - 1) * casePageSize, safeCasePage * casePageSize);
 
   return (
     <aside className="animate-rise space-y-3 lg:sticky lg:top-[78px] lg:self-start">
@@ -307,7 +318,7 @@ function CaseRail({
         ))}
       </div>
       <div className="grid gap-2.5 sm:grid-cols-3 lg:grid-cols-1">
-        {cases.map((item) => {
+        {paginatedCases.map((item) => {
           const active = selectedId === item.id;
           return (
             <button
@@ -338,6 +349,17 @@ function CaseRail({
           </div>
         )}
       </div>
+      {cases.length > casePageSize && (
+        <PaginationControl
+          currentPage={safeCasePage}
+          totalPages={totalCasePages}
+          totalItems={cases.length}
+          pageSize={casePageSize}
+          onPageChange={setCasePage}
+          itemLabel="cases"
+          compact={true}
+        />
+      )}
       <div className="hidden border-t border-ink/10 px-1 pt-4 font-mono text-[9px] uppercase leading-relaxed text-muted-foreground lg:block">
         Verity Decision Support
         <br />

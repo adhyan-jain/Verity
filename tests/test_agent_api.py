@@ -114,3 +114,42 @@ def test_api_chat_latency_watchdog_trigger():
     )
     assert res.get("is_fallback") is True
     assert "Execution exceeded latency limit" in res.get("fallback_reason", "")
+
+
+def test_api_get_queue_paginated():
+    # Test unpaginated/default behavior
+    resp_all = client.post("/api/v1/aml/queue", json={})
+    assert resp_all.status_code == 200
+    data_all = resp_all.json()
+    total = data_all.get("total_records", len(data_all.get("records", [])))
+
+    # Test paginated behavior
+    resp_p1 = client.post("/api/v1/aml/queue", json={"page": 1, "page_size": 2})
+    assert resp_p1.status_code == 200
+    data_p1 = resp_p1.json()
+    assert data_p1["current_page"] == 1
+    assert data_p1["page_size"] == 2
+    assert len(data_p1["records"]) <= 2
+    if total > 0:
+        assert data_p1["total_pages"] >= 1
+
+
+def test_api_get_timeline_paginated():
+    account_id = "409000493210"
+    resp_p1 = client.get(f"/api/v1/aml/timeline/{account_id}?page=1&page_size=5")
+    assert resp_p1.status_code == 200
+    data_p1 = resp_p1.json()
+    assert data_p1["current_page"] == 1
+    assert data_p1["page_size"] == 5
+    assert len(data_p1["timeline"]) <= 5
+    if data_p1["total_txns"] > 5:
+        assert data_p1["total_pages"] > 1
+        resp_p2 = client.get(f"/api/v1/aml/timeline/{account_id}?page=2&page_size=5")
+        assert resp_p2.status_code == 200
+        data_p2 = resp_p2.json()
+        assert data_p2["current_page"] == 2
+        # Ensure page 1 and page 2 don't overlap IDs
+        p1_ids = {tx["id"] for tx in data_p1["timeline"]}
+        p2_ids = {tx["id"] for tx in data_p2["timeline"]}
+        assert p1_ids.isdisjoint(p2_ids)
+
