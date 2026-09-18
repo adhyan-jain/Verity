@@ -7,6 +7,9 @@
 
 # Runtime cache
 data/cache/
+data/Credit_card/
+data/Pay_sim/
+logs/
 
 
 

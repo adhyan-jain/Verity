@@ -1,0 +1,31 @@
+{
+  "trained_at": "paysim-v1-20260918T175641Z",
+  "split_step": 355,
+  "train_rows": 5113884,
+  "test_rows": 1248736,
+  "alert_k": 12487,
+  "results": {
+    "lightgbm": {
+      "macro_f1": 0.5253,
+      "weighted_f1": 0.9657,
+      "precision": 0.0432,
+      "recall": 0.7918,
+      "roc_auc": 0.8659,
+      "precision_at_k": 0.0968,
+      "recall_at_k": 0.2845,
+      "alert_k": 12487,
+      "train_sec": 19.61
+    },
+    "random_forest": {
+      "macro_f1": 0.8409,
+      "weighted_f1": 0.9975,
+      "precision": 0.5401,
+      "recall": 0.9294,
+      "roc_auc": 0.9994,
+      "precision_at_k": 0.3383,
+      "recall_at_k": 0.9939,
+      "alert_k": 12487,
+      "train_sec": 66.67
+    }
+  }
+}

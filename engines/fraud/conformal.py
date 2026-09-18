@@ -419,3 +419,24 @@ if __name__ == "__main__":
         f"  Clear partition   (n_calib={clear['n_calibration']}, n_eval={clear['n_coverage_eval']}) "
         f"-> coverage={clear['empirical_coverage']}, width={clear['mean_interval_width']}"
     )
+
+
+def wrap_score(score: float, confidence: float = 0.90) -> dict[str, Any]:
+    """Wraps a risk score with a calibrated conformal prediction interval."""
+    try:
+        from engines.fraud.paysim_conformal import wrap_score as _ps_wrap
+        return _ps_wrap(score, confidence)
+    except Exception:
+        interval = predict_risk_interval(score)
+        if interval:
+            lo, hi = interval["lower"], interval["upper"]
+        else:
+            margin = 0.02
+            lo, hi = max(0.0, round(score - margin, 4)), min(1.0, round(score + margin, 4))
+        return {
+            "risk_score": score,
+            "conformal_lo": lo,
+            "conformal_hi": hi,
+            "confidence_pct": int(confidence * 100),
+            "label": f"risk score: {score:.2f}, {int(confidence*100)}% CI: [{lo:.2f}, {hi:.2f}]",
+        }

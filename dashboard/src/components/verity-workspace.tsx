@@ -8,6 +8,7 @@ import {
   Network,
   Search,
   Send,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Cpu,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { useEffect, useMemo, useState } from "react";
+import { UnifiedAmlCockpit } from "./aml-screens";
 import {
   checkEnginesHealth,
   askCounterfactualOrChat,
@@ -871,6 +873,8 @@ export function VerityWorkspace() {
     };
   }, [item.id, item.tier, item.transactionId]);
 
+  const [activeDesk, setActiveDesk] = useState<"aml" | "multi_tier">("aml");
+
   const liveRisk = counterfactualRisk ?? live.investigation?.risk_score ?? null;
   const riskSource: "counterfactual" | "investigation" | null =
     counterfactualRisk !== null ? "counterfactual" : live.investigation ? "investigation" : null;
@@ -878,72 +882,120 @@ export function VerityWorkspace() {
   return (
     <div className="min-h-screen bg-paper text-ink">
       <Masthead engines={engines} />
-      <div className="mx-auto grid max-w-[1480px] grid-cols-1 gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[290px_minmax(0,1fr)] lg:gap-6 lg:py-6">
-        <CaseRail
-          selectedId={selectedId}
-          onSelect={(id) => {
-            setSelectedId(id);
-            setDecision(null);
-            setCounterfactualRisk(null);
-          }}
-        />
-        <main className="min-w-0 space-y-4">
-          {!live.loading && !live.investigation && (
-            <div className="flex items-start gap-3 rounded-md border border-amber/40 bg-amber/10 p-4 text-xs text-amber font-mono shadow-sm">
-              <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber animate-pulse" />
-              <div className="leading-relaxed">
-                <span className="font-bold uppercase tracking-wider">Showing Cached Data — Live Service Unavailable:</span>{" "}
-                The workspace is rendering pre-computed benchmark fixtures because backend microservices are offline. Run{" "}
-                <code className="rounded bg-amber/20 px-1.5 py-0.5 font-bold text-amber">python scripts/dev_up.py</code> to connect live LightGBM/SHAP and FATF traversal engines (Ports 8000–8003).
+
+      {/* Top Level Desk Switcher */}
+      <div className="border-b border-ink/10 bg-panel/85 backdrop-blur px-4 sm:px-6 py-2.5 sticky top-0 z-30 shadow-xs">
+        <div className="mx-auto flex max-w-[1520px] items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 p-1 bg-paper rounded-lg border border-ink/10 text-xs font-mono">
+            <button
+              type="button"
+              onClick={() => setActiveDesk("aml")}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md font-bold transition ${
+                activeDesk === "aml"
+                  ? "bg-signal text-signal-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-ink hover:bg-ink/5"
+              }`}
+            >
+              <ShieldAlert className="size-3.5" />
+              <span>AML Operations Cockpit (Screens 1–5)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveDesk("multi_tier")}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md font-bold transition ${
+                activeDesk === "multi_tier"
+                  ? "bg-signal text-signal-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-ink hover:bg-ink/5"
+              }`}
+            >
+              <Cpu className="size-3.5" />
+              <span>Multi-Tier Architecture Showcase</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <span className="size-2 rounded-full bg-teal animate-pulse" />
+              <span className="text-ink font-semibold">Live Operational Gate Active</span>
+            </div>
+            <span>·</span>
+            <span>Gate 1: Date-Only bank.xlsx</span>
+          </div>
+        </div>
+      </div>
+
+      {activeDesk === "aml" ? (
+        <div className="mx-auto max-w-[1520px] px-4 py-4 sm:px-6">
+          <UnifiedAmlCockpit />
+        </div>
+      ) : (
+        <div className="mx-auto grid max-w-[1480px] grid-cols-1 gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[290px_minmax(0,1fr)] lg:gap-6 lg:py-6">
+          <CaseRail
+            selectedId={selectedId}
+            onSelect={(id) => {
+              setSelectedId(id);
+              setDecision(null);
+              setCounterfactualRisk(null);
+            }}
+          />
+          <main className="min-w-0 space-y-4">
+            {!live.loading && !live.investigation && (
+              <div className="flex items-start gap-3 rounded-md border border-amber/40 bg-amber/10 p-4 text-xs text-amber font-mono shadow-sm">
+                <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber animate-pulse" />
+                <div className="leading-relaxed">
+                  <span className="font-bold uppercase tracking-wider">Showing Cached Data — Live Service Unavailable:</span>{" "}
+                  The workspace is rendering pre-computed benchmark fixtures because backend microservices are offline. Run{" "}
+                  <code className="rounded bg-amber/20 px-1.5 py-0.5 font-bold text-amber">python scripts/dev_up.py</code> to connect live LightGBM/SHAP and FATF traversal engines (Ports 8000–8003).
+                </div>
+              </div>
+            )}
+            <RiskHeader item={item} liveRisk={liveRisk} riskSource={riskSource} />
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(260px,0.7fr)]">
+              <EvidencePanel
+                key={`${item.id}-evidence`}
+                item={item}
+                timeline={live.timeline}
+                network={live.network}
+              />
+              <Factors item={item} liveFactors={live.factors} />
+            </div>
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)]">
+              <ReasoningTrace item={item} investigation={live.investigation} loading={live.loading} />
+              <div className="space-y-4">
+                <section className="rounded-md bg-panel p-4 shadow-soft md:p-5">
+                  <div className="eyebrow">Analyst disposition</div>
+                  {decision ? (
+                    <div className="mt-4 flex items-center gap-3 rounded-md bg-teal/10 p-3 text-sm text-teal">
+                      <Check className="size-4 shrink-0" /> Marked “{decision}” in this session
+                    </div>
+                  ) : (
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                      <ActionButton onClick={() => setDecision("Escalate")}>
+                        Escalate <ArrowRight className="size-3.5" />
+                      </ActionButton>
+                      <ActionButton variant="quiet" onClick={() => setDecision("Needs review")}>
+                        <FileCheck2 className="size-3.5" /> Needs review
+                      </ActionButton>
+                    </div>
+                  )}
+                  <p className="mt-3 font-mono text-[9px] uppercase leading-relaxed text-muted-foreground">
+                    Decision Support Prototype · Auditable Trace
+                  </p>
+                </section>
+                <QueryPanel
+                  key={`${item.id}-query`}
+                  item={item}
+                  onScoreChange={(newScore) => setCounterfactualRisk(newScore)}
+                />
               </div>
             </div>
-          )}
-          <RiskHeader item={item} liveRisk={liveRisk} riskSource={riskSource} />
-
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(260px,0.7fr)]">
-            <EvidencePanel
-              key={`${item.id}-evidence`}
-              item={item}
-              timeline={live.timeline}
-              network={live.network}
-            />
-            <Factors item={item} liveFactors={live.factors} />
-          </div>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)]">
-            <ReasoningTrace item={item} investigation={live.investigation} loading={live.loading} />
-            <div className="space-y-4">
-              <section className="rounded-md bg-panel p-4 shadow-soft md:p-5">
-                <div className="eyebrow">Analyst disposition</div>
-                {decision ? (
-                  <div className="mt-4 flex items-center gap-3 rounded-md bg-teal/10 p-3 text-sm text-teal">
-                    <Check className="size-4 shrink-0" /> Marked “{decision}” in this session
-                  </div>
-                ) : (
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-                    <ActionButton onClick={() => setDecision("Escalate")}>
-                      Escalate <ArrowRight className="size-3.5" />
-                    </ActionButton>
-                    <ActionButton variant="quiet" onClick={() => setDecision("Needs review")}>
-                      <FileCheck2 className="size-3.5" /> Needs review
-                    </ActionButton>
-                  </div>
-                )}
-                <p className="mt-3 font-mono text-[9px] uppercase leading-relaxed text-muted-foreground">
-                  Decision Support Prototype · Auditable Trace
-                </p>
-              </section>
-              <QueryPanel
-                key={`${item.id}-query`}
-                item={item}
-                onScoreChange={(newScore) => setCounterfactualRisk(newScore)}
-              />
-            </div>
-          </div>
-          <footer className="py-5 text-center font-mono text-[9px] uppercase leading-relaxed text-muted-foreground">
-            Verity prototype · synthetic exhibits are labeled · grounded reasoning engine
-          </footer>
-        </main>
-      </div>
+            <footer className="py-5 text-center font-mono text-[9px] uppercase leading-relaxed text-muted-foreground">
+              Verity prototype · synthetic exhibits are labeled · grounded reasoning engine
+            </footer>
+          </main>
+        </div>
+      )}
     </div>
   );
 }
