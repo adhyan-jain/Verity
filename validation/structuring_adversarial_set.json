@@ -1,0 +1,239 @@
+[
+  {
+    "test_id": "VAL-STR-TP-01",
+    "description": "True structuring: 5 unrelated senders, no prior relationship, deposit $8,200-$9,600 into a newly-created collector within a 6-hour window",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      { "id": "VAL-COLL-01", "name": "Newly Opened Collector Account", "risk_rating": "critical" },
+      { "id": "VAL-SRC-01-1", "name": "Unrelated Depositor 1", "risk_rating": "high" },
+      { "id": "VAL-SRC-01-2", "name": "Unrelated Depositor 2", "risk_rating": "high" },
+      { "id": "VAL-SRC-01-3", "name": "Unrelated Depositor 3", "risk_rating": "high" },
+      { "id": "VAL-SRC-01-4", "name": "Unrelated Depositor 4", "risk_rating": "high" },
+      { "id": "VAL-SRC-01-5", "name": "Unrelated Depositor 5", "risk_rating": "high" }
+    ],
+    "edges": [
+      { "id": "VAL-TX-01-1", "from_account": "VAL-SRC-01-1", "to_account": "VAL-COLL-01", "amount": 8200.0, "timestamp": "2026-03-02T09:00:00Z" },
+      { "id": "VAL-TX-01-2", "from_account": "VAL-SRC-01-2", "to_account": "VAL-COLL-01", "amount": 8850.0, "timestamp": "2026-03-02T10:15:00Z" },
+      { "id": "VAL-TX-01-3", "from_account": "VAL-SRC-01-3", "to_account": "VAL-COLL-01", "amount": 9300.0, "timestamp": "2026-03-02T11:40:00Z" },
+      { "id": "VAL-TX-01-4", "from_account": "VAL-SRC-01-4", "to_account": "VAL-COLL-01", "amount": 9050.0, "timestamp": "2026-03-02T13:20:00Z" },
+      { "id": "VAL-TX-01-5", "from_account": "VAL-SRC-01-5", "to_account": "VAL-COLL-01", "amount": 9600.0, "timestamp": "2026-03-02T15:00:00Z" }
+    ],
+    "test_rationale": "Exhibits all four FATF structuring signatures per validation/fatf_structuring_references.md: threshold-avoidance clustering (all amounts $8.2k-$9.6k, below the $10k CTR-equivalent threshold), fan-in from 5 distinct unrelated originators, no legitimate prior relationship between sender and collector accounts, and time-compression (6 hours)."
+  },
+  {
+    "test_id": "VAL-STR-TP-02",
+    "description": "True structuring: single originator makes 4 rapid same-day transfers to a new beneficiary, each in the $9,000-$9,700 range, within 3 hours",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      { "id": "VAL-ORIG-02", "name": "Originating Account", "risk_rating": "high" },
+      { "id": "VAL-BENEF-02", "name": "New Beneficiary Account", "risk_rating": "critical" }
+    ],
+    "edges": [
+      { "id": "VAL-TX-02-1", "from_account": "VAL-ORIG-02", "to_account": "VAL-BENEF-02", "amount": 9050.0, "timestamp": "2026-04-11T08:00:00Z" },
+      { "id": "VAL-TX-02-2", "from_account": "VAL-ORIG-02", "to_account": "VAL-BENEF-02", "amount": 9400.0, "timestamp": "2026-04-11T09:10:00Z" },
+      { "id": "VAL-TX-02-3", "from_account": "VAL-ORIG-02", "to_account": "VAL-BENEF-02", "amount": 9700.0, "timestamp": "2026-04-11T10:05:00Z" },
+      { "id": "VAL-TX-02-4", "from_account": "VAL-ORIG-02", "to_account": "VAL-BENEF-02", "amount": 9150.0, "timestamp": "2026-04-11T11:00:00Z" }
+    ],
+    "test_rationale": "Single-originator variant of structuring: repeated below-threshold transfers to the same new beneficiary compressed into 3 hours, consistent with deliberately avoiding a single large reportable transfer rather than a legitimate one-off large payment."
+  },
+  {
+    "test_id": "VAL-STR-TP-03",
+    "description": "True structuring: 6 unrelated senders deposit tightly clustered $9,000-$9,900 amounts into a collector within 12 hours",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      { "id": "VAL-COLL-03", "name": "Collector Account", "risk_rating": "critical" },
+      { "id": "VAL-SRC-03-1", "name": "Depositor A", "risk_rating": "high" },
+      { "id": "VAL-SRC-03-2", "name": "Depositor B", "risk_rating": "high" },
+      { "id": "VAL-SRC-03-3", "name": "Depositor C", "risk_rating": "high" },
+      { "id": "VAL-SRC-03-4", "name": "Depositor D", "risk_rating": "high" },
+      { "id": "VAL-SRC-03-5", "name": "Depositor E", "risk_rating": "high" },
+      { "id": "VAL-SRC-03-6", "name": "Depositor F", "risk_rating": "high" }
+    ],
+    "edges": [
+      { "id": "VAL-TX-03-1", "from_account": "VAL-SRC-03-1", "to_account": "VAL-COLL-03", "amount": 9020.0, "timestamp": "2026-05-06T07:00:00Z" },
+      { "id": "VAL-TX-03-2", "from_account": "VAL-SRC-03-2", "to_account": "VAL-COLL-03", "amount": 9310.0, "timestamp": "2026-05-06T09:00:00Z" },
+      { "id": "VAL-TX-03-3", "from_account": "VAL-SRC-03-3", "to_account": "VAL-COLL-03", "amount": 9600.0, "timestamp": "2026-05-06T11:00:00Z" },
+      { "id": "VAL-TX-03-4", "from_account": "VAL-SRC-03-4", "to_account": "VAL-COLL-03", "amount": 9450.0, "timestamp": "2026-05-06T13:00:00Z" },
+      { "id": "VAL-TX-03-5", "from_account": "VAL-SRC-03-5", "to_account": "VAL-COLL-03", "amount": 9800.0, "timestamp": "2026-05-06T16:00:00Z" },
+      { "id": "VAL-TX-03-6", "from_account": "VAL-SRC-03-6", "to_account": "VAL-COLL-03", "amount": 9900.0, "timestamp": "2026-05-06T18:30:00Z" }
+    ],
+    "test_rationale": "Higher-volume fan-in variant (6 senders) with amounts drifting upward toward the threshold across the day, a pattern FATF typology reporting associates with smurfs testing how close to the limit they can get without detection."
+  },
+  {
+    "test_id": "VAL-STR-TP-04",
+    "description": "True structuring: 4 senders deposit oddly-specific (non-round) amounts avoiding the threshold, within 8 hours",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      { "id": "VAL-COLL-04", "name": "Collector Account", "risk_rating": "critical" },
+      { "id": "VAL-SRC-04-1", "name": "Depositor 1", "risk_rating": "high" },
+      { "id": "VAL-SRC-04-2", "name": "Depositor 2", "risk_rating": "high" },
+      { "id": "VAL-SRC-04-3", "name": "Depositor 3", "risk_rating": "high" },
+      { "id": "VAL-SRC-04-4", "name": "Depositor 4", "risk_rating": "high" }
+    ],
+    "edges": [
+      { "id": "VAL-TX-04-1", "from_account": "VAL-SRC-04-1", "to_account": "VAL-COLL-04", "amount": 9847.0, "timestamp": "2026-06-19T08:10:00Z" },
+      { "id": "VAL-TX-04-2", "from_account": "VAL-SRC-04-2", "to_account": "VAL-COLL-04", "amount": 9213.0, "timestamp": "2026-06-19T10:35:00Z" },
+      { "id": "VAL-TX-04-3", "from_account": "VAL-SRC-04-3", "to_account": "VAL-COLL-04", "amount": 8976.0, "timestamp": "2026-06-19T13:50:00Z" },
+      { "id": "VAL-TX-04-4", "from_account": "VAL-SRC-04-4", "to_account": "VAL-COLL-04", "amount": 9502.0, "timestamp": "2026-06-19T16:05:00Z" }
+    ],
+    "test_rationale": "Amounts are deliberately non-round (e.g. $9,847 rather than $9,800) — real structuring cases often avoid conspicuously round numbers even while clustering near a threshold, since round-number clustering is itself a known detection heuristic. Tests whether the detector's threshold logic depends on round-number proximity or genuinely checks the sub-threshold range."
+  },
+  {
+    "test_id": "VAL-STR-TP-05",
+    "description": "True structuring: 5 senders converge on a collector across two consecutive days (structuring split across days to look less like a single-day burst)",
+    "expected_verdict": "flagged",
+    "expected_typology": "structuring",
+    "nodes": [
+      { "id": "VAL-COLL-05", "name": "Collector Account", "risk_rating": "critical" },
+      { "id": "VAL-SRC-05-1", "name": "Depositor 1", "risk_rating": "high" },
+      { "id": "VAL-SRC-05-2", "name": "Depositor 2", "risk_rating": "high" },
+      { "id": "VAL-SRC-05-3", "name": "Depositor 3", "risk_rating": "high" },
+      { "id": "VAL-SRC-05-4", "name": "Depositor 4", "risk_rating": "high" },
+      { "id": "VAL-SRC-05-5", "name": "Depositor 5", "risk_rating": "high" }
+    ],
+    "edges": [
+      { "id": "VAL-TX-05-1", "from_account": "VAL-SRC-05-1", "to_account": "VAL-COLL-05", "amount": 9100.0, "timestamp": "2026-07-08T20:00:00Z" },
+      { "id": "VAL-TX-05-2", "from_account": "VAL-SRC-05-2", "to_account": "VAL-COLL-05", "amount": 9450.0, "timestamp": "2026-07-08T22:30:00Z" },
+      { "id": "VAL-TX-05-3", "from_account": "VAL-SRC-05-3", "to_account": "VAL-COLL-05", "amount": 8900.0, "timestamp": "2026-07-09T01:00:00Z" },
+      { "id": "VAL-TX-05-4", "from_account": "VAL-SRC-05-4", "to_account": "VAL-COLL-05", "amount": 9700.0, "timestamp": "2026-07-09T03:15:00Z" },
+      { "id": "VAL-TX-05-5", "from_account": "VAL-SRC-05-5", "to_account": "VAL-COLL-05", "amount": 9250.0, "timestamp": "2026-07-09T06:00:00Z" }
+    ],
+    "test_rationale": "Spans a calendar-day boundary (20:00 to 06:00 next day) while remaining within a true 10-hour window — tests whether a naive same-calendar-day check would miss structuring that straddles midnight, versus a genuine elapsed-time window check."
+  },
+  {
+    "test_id": "VAL-STR-DECOY-01-PAYROLL",
+    "description": "Decoy: legitimate payroll run, one employer fanning OUT to 6 named employee accounts with varying role-based salary amounts, same payday",
+    "expected_verdict": "benign",
+    "expected_typology": null,
+    "nodes": [
+      { "id": "VAL-EMPLOYER-01", "name": "Acme Logistics Payroll Account", "risk_rating": "low" },
+      { "id": "VAL-EMP-01-1", "name": "Employee: Warehouse Lead", "risk_rating": "low" },
+      { "id": "VAL-EMP-01-2", "name": "Employee: Driver 1", "risk_rating": "low" },
+      { "id": "VAL-EMP-01-3", "name": "Employee: Driver 2", "risk_rating": "low" },
+      { "id": "VAL-EMP-01-4", "name": "Employee: Dispatcher", "risk_rating": "low" },
+      { "id": "VAL-EMP-01-5", "name": "Employee: Admin Assistant", "risk_rating": "low" },
+      { "id": "VAL-EMP-01-6", "name": "Employee: Operations Manager", "risk_rating": "low" }
+    ],
+    "edges": [
+      { "id": "VAL-TX-D01-1", "from_account": "VAL-EMPLOYER-01", "to_account": "VAL-EMP-01-1", "amount": 4200.0, "timestamp": "2026-03-01T09:00:00Z" },
+      { "id": "VAL-TX-D01-2", "from_account": "VAL-EMPLOYER-01", "to_account": "VAL-EMP-01-2", "amount": 3100.0, "timestamp": "2026-03-01T09:00:00Z" },
+      { "id": "VAL-TX-D01-3", "from_account": "VAL-EMPLOYER-01", "to_account": "VAL-EMP-01-3", "amount": 3250.0, "timestamp": "2026-03-01T09:00:00Z" },
+      { "id": "VAL-TX-D01-4", "from_account": "VAL-EMPLOYER-01", "to_account": "VAL-EMP-01-4", "amount": 3800.0, "timestamp": "2026-03-01T09:00:00Z" },
+      { "id": "VAL-TX-D01-5", "from_account": "VAL-EMPLOYER-01", "to_account": "VAL-EMP-01-5", "amount": 2900.0, "timestamp": "2026-03-01T09:00:00Z" },
+      { "id": "VAL-TX-D01-6", "from_account": "VAL-EMPLOYER-01", "to_account": "VAL-EMP-01-6", "amount": 6400.0, "timestamp": "2026-03-01T09:00:00Z" }
+    ],
+    "test_rationale": "Violates the fan-in signature (this is fan-OUT: one employer to many employees, the opposite topology of a structuring collector) and the relationship signature (named, role-differentiated employee accounts with naturally varying role-based salaries, not amounts clustered near a reporting threshold). Same-timestamp batch payroll run is a normal, auditable business process, not time-compression evasion."
+  },
+  {
+    "test_id": "VAL-STR-DECOY-02-VENDOR",
+    "description": "Decoy: recurring monthly vendor/rent payments from one business to 3 fixed vendors, spread across a full month, not a single burst",
+    "expected_verdict": "benign",
+    "expected_typology": null,
+    "nodes": [
+      { "id": "VAL-BIZ-02", "name": "Small Business Operating Account", "risk_rating": "low" },
+      { "id": "VAL-VENDOR-02-1", "name": "Vendor: Commercial Landlord", "risk_rating": "low" },
+      { "id": "VAL-VENDOR-02-2", "name": "Vendor: Utility Provider", "risk_rating": "low" },
+      { "id": "VAL-VENDOR-02-3", "name": "Vendor: Equipment Lease Co", "risk_rating": "low" }
+    ],
+    "edges": [
+      { "id": "VAL-TX-D02-1", "from_account": "VAL-BIZ-02", "to_account": "VAL-VENDOR-02-1", "amount": 9500.0, "timestamp": "2026-04-01T09:00:00Z" },
+      { "id": "VAL-TX-D02-2", "from_account": "VAL-BIZ-02", "to_account": "VAL-VENDOR-02-2", "amount": 1200.0, "timestamp": "2026-04-12T09:00:00Z" },
+      { "id": "VAL-TX-D02-3", "from_account": "VAL-BIZ-02", "to_account": "VAL-VENDOR-02-3", "amount": 2800.0, "timestamp": "2026-04-25T09:00:00Z" }
+    ],
+    "test_rationale": "Same magnitude range as a structuring collector's inflow (one payment happens to be $9,500, near the reference threshold) but violates time-compression (spread across 24 days, not hours) and the relationship signature (fixed, recurring, named commercial vendors — the kind of relationship a real ledger reconciliation would already recognize as recurring). Tests whether the detector's time-window check actually excludes this or over-triggers on the single near-threshold rent payment alone."
+  },
+  {
+    "test_id": "VAL-STR-DECOY-03-SUBSCRIPTION",
+    "description": "Decoy: SaaS subscription billing, fan-in from 8 distinct unrelated customers paying a fixed low recurring fee, well below any reporting threshold",
+    "expected_verdict": "benign",
+    "expected_typology": null,
+    "nodes": [
+      { "id": "VAL-SAAS-03", "name": "SaaS Merchant Billing Account", "risk_rating": "low" },
+      { "id": "VAL-CUST-03-1", "name": "Subscriber 1", "risk_rating": "low" },
+      { "id": "VAL-CUST-03-2", "name": "Subscriber 2", "risk_rating": "low" },
+      { "id": "VAL-CUST-03-3", "name": "Subscriber 3", "risk_rating": "low" },
+      { "id": "VAL-CUST-03-4", "name": "Subscriber 4", "risk_rating": "low" },
+      { "id": "VAL-CUST-03-5", "name": "Subscriber 5", "risk_rating": "low" },
+      { "id": "VAL-CUST-03-6", "name": "Subscriber 6", "risk_rating": "low" },
+      { "id": "VAL-CUST-03-7", "name": "Subscriber 7", "risk_rating": "low" },
+      { "id": "VAL-CUST-03-8", "name": "Subscriber 8", "risk_rating": "low" }
+    ],
+    "edges": [
+      { "id": "VAL-TX-D03-1", "from_account": "VAL-CUST-03-1", "to_account": "VAL-SAAS-03", "amount": 49.99, "timestamp": "2026-05-01T00:05:00Z" },
+      { "id": "VAL-TX-D03-2", "from_account": "VAL-CUST-03-2", "to_account": "VAL-SAAS-03", "amount": 49.99, "timestamp": "2026-05-01T00:12:00Z" },
+      { "id": "VAL-TX-D03-3", "from_account": "VAL-CUST-03-3", "to_account": "VAL-SAAS-03", "amount": 49.99, "timestamp": "2026-05-01T00:20:00Z" },
+      { "id": "VAL-TX-D03-4", "from_account": "VAL-CUST-03-4", "to_account": "VAL-SAAS-03", "amount": 49.99, "timestamp": "2026-05-01T00:31:00Z" },
+      { "id": "VAL-TX-D03-5", "from_account": "VAL-CUST-03-5", "to_account": "VAL-SAAS-03", "amount": 149.99, "timestamp": "2026-05-01T00:40:00Z" },
+      { "id": "VAL-TX-D03-6", "from_account": "VAL-CUST-03-6", "to_account": "VAL-SAAS-03", "amount": 49.99, "timestamp": "2026-05-01T00:52:00Z" },
+      { "id": "VAL-TX-D03-7", "from_account": "VAL-CUST-03-7", "to_account": "VAL-SAAS-03", "amount": 149.99, "timestamp": "2026-05-01T01:05:00Z" },
+      { "id": "VAL-TX-D03-8", "from_account": "VAL-CUST-03-8", "to_account": "VAL-SAAS-03", "amount": 49.99, "timestamp": "2026-05-01T01:15:00Z" }
+    ],
+    "test_rationale": "Has the fan-in topology and multi-originator signature of structuring, but violates threshold-avoidance clustering entirely — amounts are two fixed low price points ($49.99/$149.99), nowhere near a reporting threshold, consistent with a real subscription tier structure rather than deliberate evasion. This is the most common false-positive shape a naive 'many small deposits' heuristic would misfire on."
+  },
+  {
+    "test_id": "VAL-STR-DECOY-04-SEASONAL",
+    "description": "Decoy: seasonal retail sales spike, fan-in from 8 genuine unrelated retail customers over a 5-day holiday sale window, naturally varying amounts",
+    "expected_verdict": "benign",
+    "expected_typology": null,
+    "nodes": [
+      { "id": "VAL-RETAIL-04", "name": "Retail Store Collector Account", "risk_rating": "low" },
+      { "id": "VAL-CUST-04-1", "name": "Retail Customer 1", "risk_rating": "low" },
+      { "id": "VAL-CUST-04-2", "name": "Retail Customer 2", "risk_rating": "low" },
+      { "id": "VAL-CUST-04-3", "name": "Retail Customer 3", "risk_rating": "low" },
+      { "id": "VAL-CUST-04-4", "name": "Retail Customer 4", "risk_rating": "low" },
+      { "id": "VAL-CUST-04-5", "name": "Retail Customer 5", "risk_rating": "low" },
+      { "id": "VAL-CUST-04-6", "name": "Retail Customer 6", "risk_rating": "low" },
+      { "id": "VAL-CUST-04-7", "name": "Retail Customer 7", "risk_rating": "low" },
+      { "id": "VAL-CUST-04-8", "name": "Retail Customer 8", "risk_rating": "low" }
+    ],
+    "edges": [
+      { "id": "VAL-TX-D04-1", "from_account": "VAL-CUST-04-1", "to_account": "VAL-RETAIL-04", "amount": 84.50, "timestamp": "2026-11-27T10:00:00Z" },
+      { "id": "VAL-TX-D04-2", "from_account": "VAL-CUST-04-2", "to_account": "VAL-RETAIL-04", "amount": 4790.00, "timestamp": "2026-11-27T14:30:00Z" },
+      { "id": "VAL-TX-D04-3", "from_account": "VAL-CUST-04-3", "to_account": "VAL-RETAIL-04", "amount": 212.75, "timestamp": "2026-11-28T09:15:00Z" },
+      { "id": "VAL-TX-D04-4", "from_account": "VAL-CUST-04-4", "to_account": "VAL-RETAIL-04", "amount": 1330.00, "timestamp": "2026-11-28T16:45:00Z" },
+      { "id": "VAL-TX-D04-5", "from_account": "VAL-CUST-04-5", "to_account": "VAL-RETAIL-04", "amount": 58.20, "timestamp": "2026-11-29T11:20:00Z" },
+      { "id": "VAL-TX-D04-6", "from_account": "VAL-CUST-04-6", "to_account": "VAL-RETAIL-04", "amount": 3120.00, "timestamp": "2026-11-30T13:00:00Z" },
+      { "id": "VAL-TX-D04-7", "from_account": "VAL-CUST-04-7", "to_account": "VAL-RETAIL-04", "amount": 645.00, "timestamp": "2026-12-01T15:10:00Z" },
+      { "id": "VAL-TX-D04-8", "from_account": "VAL-CUST-04-8", "to_account": "VAL-RETAIL-04", "amount": 97.30, "timestamp": "2026-12-01T18:40:00Z" }
+    ],
+    "test_rationale": "Fan-in from multiple unrelated originators, like structuring, but amounts vary widely and naturally ($58-$4,790) with no clustering near a threshold, and the window (5 days, Black Friday through Cyber Monday) reflects a well-known legitimate seasonal demand pattern rather than a deliberate compressed burst."
+  },
+  {
+    "test_id": "VAL-STR-DECOY-05-SPLIT-LIMIT",
+    "description": "Hard decoy: one customer's own two accounts transfer $9,800 each on the same day into a shared family account, explained by a bank per-transaction limit, not evasion",
+    "expected_verdict": "benign",
+    "expected_typology": null,
+    "nodes": [
+      { "id": "VAL-FAMILY-05", "name": "Shared Family Savings Account", "risk_rating": "low" },
+      { "id": "VAL-SELF-05-1", "name": "Same Customer - Checking Account", "risk_rating": "low" },
+      { "id": "VAL-SELF-05-2", "name": "Same Customer - Secondary Savings", "risk_rating": "low" }
+    ],
+    "edges": [
+      { "id": "VAL-TX-D05-1", "from_account": "VAL-SELF-05-1", "to_account": "VAL-FAMILY-05", "amount": 9800.0, "timestamp": "2026-08-14T10:00:00Z" },
+      { "id": "VAL-TX-D05-2", "from_account": "VAL-SELF-05-2", "to_account": "VAL-FAMILY-05", "amount": 9800.0, "timestamp": "2026-08-14T10:05:00Z" }
+    ],
+    "test_rationale": "Deliberately adversarial: exhibits threshold-clustering AND fan-in AND time-compression (5 minutes apart) — three of the four signatures — but only 2 source accounts, both owned by the same real customer, moving funds to their own shared family account, plausibly explained by a bank's own per-transaction transfer limit rather than reporting evasion. This is intentionally the hardest case in the set: it is close to indistinguishable from real structuring using transaction data alone, and I expect the detector may reasonably flag it. That is not a detector bug — it is a genuine data-limitation case, and the validation report says so rather than treating a flag here as a clean failure."
+  },
+  {
+    "test_id": "VAL-STR-DECOY-06-COINCIDENTAL-INVOICES",
+    "description": "Hard decoy: 3 distinct unrelated corporate clients pay similar-magnitude legitimate invoices within 2 days, purely because that is the going rate for the service",
+    "expected_verdict": "benign",
+    "expected_typology": null,
+    "nodes": [
+      { "id": "VAL-CONSULT-06", "name": "Consulting Firm Receivables Account", "risk_rating": "low" },
+      { "id": "VAL-CLIENT-06-1", "name": "Corporate Client A", "risk_rating": "low" },
+      { "id": "VAL-CLIENT-06-2", "name": "Corporate Client B", "risk_rating": "low" },
+      { "id": "VAL-CLIENT-06-3", "name": "Corporate Client C", "risk_rating": "low" }
+    ],
+    "edges": [
+      { "id": "VAL-TX-D06-1", "from_account": "VAL-CLIENT-06-1", "to_account": "VAL-CONSULT-06", "amount": 9100.0, "timestamp": "2026-09-02T09:00:00Z" },
+      { "id": "VAL-TX-D06-2", "from_account": "VAL-CLIENT-06-2", "to_account": "VAL-CONSULT-06", "amount": 8700.0, "timestamp": "2026-09-02T15:00:00Z" },
+      { "id": "VAL-TX-D06-3", "from_account": "VAL-CLIENT-06-3", "to_account": "VAL-CONSULT-06", "amount": 9400.0, "timestamp": "2026-09-03T11:00:00Z" }
+    ],
+    "test_rationale": "The single hardest case in the set by design: three genuinely unrelated corporate clients happen to pay similar-magnitude monthly retainer invoices (a real, common consulting-industry pricing pattern) within a 2-day window, purely by coincidence of a shared standard project rate — not because of any coordinated evasion intent. Transaction data alone cannot fully distinguish this from true structuring without external context (invoice records, contract terms) that this system does not have access to. I am flagging this as an intellectually honest limit of what any transaction-only detector can be expected to resolve, not scoring a flag here as an unambiguous detector failure — but a flag here at high confidence, with no lower-confidence tier available, is worth reporting to the team as a UX/false-positive-rate consideration."
+  }
+]

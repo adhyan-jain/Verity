@@ -1,0 +1,111 @@
+{
+  "total_test_cases": 11,
+  "passed_cases": 10,
+  "true_positives": 4,
+  "true_negatives": 6,
+  "false_positives": 0,
+  "false_negatives": 1,
+  "precision": 1.0,
+  "recall": 0.8,
+  "f1": 0.8889,
+  "specificity": 1.0,
+  "accuracy": 0.9091,
+  "details": [
+    {
+      "test_id": "VAL-STR-TP-01",
+      "description": "True structuring: 5 unrelated senders, no prior relationship, deposit $8,200-$9,600 into a newly-created collector within a 6-hour window",
+      "expected_verdict": "flagged",
+      "actual_verdict": "flagged",
+      "passed": true,
+      "detected_flags": [
+        "structuring"
+      ]
+    },
+    {
+      "test_id": "VAL-STR-TP-02",
+      "description": "True structuring: single originator makes 4 rapid same-day transfers to a new beneficiary, each in the $9,000-$9,700 range, within 3 hours",
+      "expected_verdict": "flagged",
+      "actual_verdict": "benign",
+      "passed": false,
+      "detected_flags": []
+    },
+    {
+      "test_id": "VAL-STR-TP-03",
+      "description": "True structuring: 6 unrelated senders deposit tightly clustered $9,000-$9,900 amounts into a collector within 12 hours",
+      "expected_verdict": "flagged",
+      "actual_verdict": "flagged",
+      "passed": true,
+      "detected_flags": [
+        "structuring"
+      ]
+    },
+    {
+      "test_id": "VAL-STR-TP-04",
+      "description": "True structuring: 4 senders deposit oddly-specific (non-round) amounts avoiding the threshold, within 8 hours",
+      "expected_verdict": "flagged",
+      "actual_verdict": "flagged",
+      "passed": true,
+      "detected_flags": [
+        "structuring"
+      ]
+    },
+    {
+      "test_id": "VAL-STR-TP-05",
+      "description": "True structuring: 5 senders converge on a collector across two consecutive days (structuring split across days to look less like a single-day burst)",
+      "expected_verdict": "flagged",
+      "actual_verdict": "flagged",
+      "passed": true,
+      "detected_flags": [
+        "structuring"
+      ]
+    },
+    {
+      "test_id": "VAL-STR-DECOY-01-PAYROLL",
+      "description": "Decoy: legitimate payroll run, one employer fanning OUT to 6 named employee accounts with varying role-based salary amounts, same payday",
+      "expected_verdict": "benign",
+      "actual_verdict": "benign",
+      "passed": true,
+      "detected_flags": []
+    },
+    {
+      "test_id": "VAL-STR-DECOY-02-VENDOR",
+      "description": "Decoy: recurring monthly vendor/rent payments from one business to 3 fixed vendors, spread across a full month, not a single burst",
+      "expected_verdict": "benign",
+      "actual_verdict": "benign",
+      "passed": true,
+      "detected_flags": []
+    },
+    {
+      "test_id": "VAL-STR-DECOY-03-SUBSCRIPTION",
+      "description": "Decoy: SaaS subscription billing, fan-in from 8 distinct unrelated customers paying a fixed low recurring fee, well below any reporting threshold",
+      "expected_verdict": "benign",
+      "actual_verdict": "benign",
+      "passed": true,
+      "detected_flags": []
+    },
+    {
+      "test_id": "VAL-STR-DECOY-04-SEASONAL",
+      "description": "Decoy: seasonal retail sales spike, fan-in from 8 genuine unrelated retail customers over a 5-day holiday sale window, naturally varying amounts",
+      "expected_verdict": "benign",
+      "actual_verdict": "benign",
+      "passed": true,
+      "detected_flags": []
+    },
+    {
+      "test_id": "VAL-STR-DECOY-05-SPLIT-LIMIT",
+      "description": "Hard decoy: one customer's own two accounts transfer $9,800 each on the same day into a shared family account, explained by a bank per-transaction limit, not evasion",
+      "expected_verdict": "benign",
+      "actual_verdict": "benign",
+      "passed": true,
+      "detected_flags": []
+    },
+    {
+      "test_id": "VAL-STR-DECOY-06-COINCIDENTAL-INVOICES",
+      "description": "Hard decoy: 3 distinct unrelated corporate clients pay similar-magnitude legitimate invoices within 2 days, purely because that is the going rate for the service",
+      "expected_verdict": "benign",
+      "actual_verdict": "benign",
+      "passed": true,
+      "detected_flags": []
+    }
+  ]
+}
