@@ -14,7 +14,7 @@ import traceback
 
 import requests
 from _services import (
-    ensure_fraud_model_trained,
+    ensure_fraud_conformal_calibrated,
     load_env_file,
     start_all_backend_services,
     stop_all,
@@ -232,7 +232,7 @@ def run_checks() -> None:
 
 def main() -> int:
     load_env_file()
-    ensure_fraud_model_trained()
+    ensure_fraud_conformal_calibrated()
 
     print("Starting backend services for smoke test...")
     procs = start_all_backend_services()

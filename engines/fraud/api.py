@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from engines.fraud.conformal import load_conformal_artifact
 from engines.fraud.explain import explain_transaction, load_fraud_artifact
 
 logger = logging.getLogger("engines.fraud.api")
@@ -98,12 +99,23 @@ class TopFactor(BaseModel):
     interpretable: bool
 
 
+class RiskInterval(BaseModel):
+    lower: float
+    upper: float
+    confidence_level: float
+    empirical_coverage: float
+
+
 class FraudExplanationResponse(BaseModel):
     transaction_id: str
     risk_score: float
     verdict: str
     top_factors: list[TopFactor]
     model_version: str
+    # Additive to top_factors/SHAP, not a replacement: split-conformal
+    # interval around risk_score (engines/fraud/conformal.py). None until
+    # `python -m engines.fraud.conformal` has been run at least once.
+    risk_interval: RiskInterval | None = None
 
 
 class TransactionRecordResponse(BaseModel):
@@ -137,6 +149,7 @@ async def lifespan(app: FastAPI):
     global _STARTUP_ERROR
     try:
         load_fraud_artifact()
+        load_conformal_artifact()  # best-effort: None if not yet calibrated, never fails startup
         get_dataset()
         _STARTUP_ERROR = None
     except (FileNotFoundError, KeyError, RuntimeError, ValueError) as e:
@@ -170,6 +183,7 @@ def health_check() -> dict[str, Any]:
             status_code=503, detail=f"Service not ready: {_STARTUP_ERROR}"
         )
     artifact = load_fraud_artifact()
+    conformal_artifact = load_conformal_artifact()
     return {
         "status": "healthy",
         "engine": "fraud",
@@ -178,6 +192,17 @@ def health_check() -> dict[str, Any]:
         ),
         "model_version": artifact.get("model_version", "v1.1-prod-calibrated"),
         "metrics": artifact.get("metrics", {}),
+        "conformal_calibration": (
+            {
+                "confidence_level": conformal_artifact["confidence_level"],
+                "empirical_coverage": conformal_artifact["empirical_coverage"],
+                "mean_interval_width": conformal_artifact["mean_interval_width"],
+                "coverage_by_class": conformal_artifact["coverage_by_class"],
+                "calibrated_for_model_version": conformal_artifact["base_model_version"],
+            }
+            if conformal_artifact is not None
+            else None
+        ),
     }
 
 

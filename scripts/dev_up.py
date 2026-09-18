@@ -17,7 +17,7 @@ import sys
 
 from _services import (
     ROOT,
-    ensure_fraud_model_trained,
+    ensure_fraud_conformal_calibrated,
     load_env_file,
     start_all_backend_services,
     stop_all,
@@ -32,7 +32,7 @@ def main() -> int:
     args = parser.parse_args()
 
     load_env_file()
-    ensure_fraud_model_trained()
+    ensure_fraud_conformal_calibrated()
 
     procs = start_all_backend_services()
     dashboard_proc = None

@@ -37,7 +37,18 @@
             }
           }
         },
-        "model_version": { "type": "string" }
+        "model_version": { "type": "string" },
+        "risk_interval": {
+          "type": ["object", "null"],
+          "description": "Split-conformal prediction interval around risk_score (engines/fraud/conformal.py), additive to top_factors. Null until conformal calibration has been run.",
+          "required": ["lower", "upper", "confidence_level", "empirical_coverage"],
+          "properties": {
+            "lower": { "type": "number", "minimum": 0, "maximum": 1 },
+            "upper": { "type": "number", "minimum": 0, "maximum": 1 },
+            "confidence_level": { "type": "number", "minimum": 0, "maximum": 1, "description": "Nominal confidence level the interval was calibrated for, e.g. 0.9 for 90%." },
+            "empirical_coverage": { "type": "number", "minimum": 0, "maximum": 1, "description": "Measured fraction of held-out evaluation labels that fell inside the interval at calibration time." }
+          }
+        }
       }
     },
     "ReconciliationAnomaly": {

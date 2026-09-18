@@ -12,6 +12,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from engines.fraud.conformal import load_conformal_artifact, predict_risk_interval
+
 logger = logging.getLogger("engines.fraud.explain")
 
 _CACHED_ARTIFACT: dict[str, Any] | None = None
@@ -174,12 +176,28 @@ def explain_transaction(
     factors.sort(key=lambda x: abs(x["contribution"]), reverse=True)
     selected_factors = factors[:top_n] if top_n is not None else factors
 
+    # Additive: attaches a split-conformal interval around risk_score
+    # (engines/fraud/conformal.py) when a calibration artifact is
+    # available. Never blocks or changes the SHAP output above - a missing
+    # or failing conformal artifact just omits risk_interval.
+    risk_interval = None
+    conformal_artifact = load_conformal_artifact()
+    if conformal_artifact is not None:
+        try:
+            risk_interval = predict_risk_interval(conformal_artifact, input_df, risk_score)
+        except Exception:
+            logger.exception(
+                "Conformal interval prediction failed for transaction_id=%s; omitting risk_interval.",
+                transaction_id,
+            )
+
     return {
         "transaction_id": transaction_id,
         "risk_score": risk_score,
         "verdict": verdict,
         "top_factors": selected_factors,
         "model_version": model_version,
+        "risk_interval": risk_interval,
     }
 
 

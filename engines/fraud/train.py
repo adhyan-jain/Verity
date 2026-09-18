@@ -62,6 +62,21 @@ def _file_sha256(path: str) -> str:
     return h.hexdigest()
 
 
+def chronological_split(
+    df: pd.DataFrame, test_frac: float = 0.2
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Splits a Time-sorted dataframe into (train_df, test_df) by strict time order:
+    test_df is the most recent `test_frac` fraction of rows. Shared by train.py
+    (final model fit + held-out metrics) and conformal.py (split-conformal
+    calibration), so both always agree on exactly which rows the production
+    model has never been trained on.
+    """
+    sorted_df = df.sort_values("Time").reset_index(drop=True)
+    split_idx = int(len(sorted_df) * (1 - test_frac))
+    return sorted_df.iloc[:split_idx].reset_index(drop=True), sorted_df.iloc[split_idx:].reset_index(drop=True)
+
+
 def train_fraud_model(
     data_path: str = "data/raw/creditcard.csv",
     output_path: str = "engines/fraud/model.pkl",
@@ -80,15 +95,10 @@ def train_fraud_model(
     print(f"[Train] Training authoritative fraud detection model ({model_type}) from {data_path}...")
     df = pd.read_csv(data_path)
     dataset_hash = _file_sha256(data_path)
-    df = df.sort_values("Time").reset_index(drop=True)
-    X = df.drop(columns=["Class"])
-    y = df["Class"]
-    feature_names = X.columns.tolist()
-
-    # Time-based train/test split (80/20): test is most recent 20% by Time
-    split_idx = int(len(df) * 0.8)
-    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
-    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+    train_df, test_df = chronological_split(df, test_frac=0.2)
+    feature_names = train_df.drop(columns=["Class"]).columns.tolist()
+    X_train, y_train = train_df[feature_names], train_df["Class"]
+    X_test, y_test = test_df[feature_names], test_df["Class"]
 
     print(
         f"[Train] Chronological split: {len(X_train):,} train ({int(y_train.sum()):,} frauds), "

@@ -49,6 +49,21 @@ def ensure_fraud_model_trained() -> None:
     subprocess.run([sys.executable, "-m", "engines.fraud.train"], cwd=ROOT, check=True)
 
 
+def ensure_fraud_conformal_calibrated() -> None:
+    """Split-conformal risk_interval is additive to the SHAP panel: the
+    fraud service runs fine without it (explain_transaction omits
+    risk_interval and logs a warning). Calibrated here on every fresh
+    checkout anyway so the dashboard shows it by default, same bootstrap
+    pattern as ensure_fraud_model_trained(). Always re-run after retraining
+    the model, since the calibration is tied to one specific model_version."""
+    ensure_fraud_model_trained()
+    artifact_path = os.path.join(ROOT, "engines", "fraud", "conformal.pkl")
+    if os.path.exists(artifact_path):
+        return
+    print("[setup] engines/fraud/conformal.pkl missing — calibrating conformal intervals (~10s)...")
+    subprocess.run([sys.executable, "-m", "engines.fraud.conformal"], cwd=ROOT, check=True)
+
+
 def start_service(target: str, port: int, extra_env: dict | None = None) -> subprocess.Popen:
     env = dict(os.environ)
     env["PYTHONPATH"] = ROOT + os.pathsep + env.get("PYTHONPATH", "")

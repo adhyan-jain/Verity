@@ -73,6 +73,14 @@ def test_get_shap_explanation_flagged(client, schemas):
         elif factor["feature"].startswith("V"):
             assert factor["interpretable"] is False
 
+    # Split-conformal interval is additive to the SHAP panel above, not a
+    # replacement - both must be present together once calibrated.
+    assert data["risk_interval"] is not None
+    interval = data["risk_interval"]
+    assert interval["lower"] <= data["risk_score"] <= interval["upper"]
+    assert interval["confidence_level"] == pytest.approx(0.90)
+    assert 0 <= interval["empirical_coverage"] <= 1
+
 
 def test_get_shap_explanation_clear(client, schemas):
     response = client.get("/api/v1/fraud/explain/TX-CARD-0")
@@ -81,6 +89,8 @@ def test_get_shap_explanation_clear(client, schemas):
     validate(instance=data, schema=schemas["FraudExplanation"])
     assert data["verdict"] == "clear"
     assert data["risk_score"] < 0.5
+    assert data["risk_interval"] is not None
+    assert data["risk_interval"]["lower"] <= data["risk_score"] <= data["risk_interval"]["upper"]
 
 
 def test_counterfactual_endpoint(client):
