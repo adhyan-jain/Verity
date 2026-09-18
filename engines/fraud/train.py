@@ -78,13 +78,13 @@ def train_fraud_model(
         fold_clf.fit(X_tr_res, y_tr_res)
         oof_probas[val_idx] = fold_clf.predict_proba(X_va)[:, 1]
 
-    # Calculate optimal threshold on OOF predictions
+    # Calculate optimal threshold on OOF predictions.
+    # precision_recall_curve returns thresholds with length len(precisions) - 1,
+    # so the search is restricted to indices that have a corresponding threshold.
     precisions, recalls, thresholds = precision_recall_curve(y_train, oof_probas)
     f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-10)
-    best_idx = int(np.argmax(f1_scores))
-    calibrated_threshold = (
-        float(thresholds[best_idx]) if best_idx < len(thresholds) else 0.5
-    )
+    best_idx = int(np.argmax(f1_scores[: len(thresholds)]))
+    calibrated_threshold = float(thresholds[best_idx])
     oof_f1 = float(f1_scores[best_idx])
     oof_pr_auc = float(average_precision_score(y_train, oof_probas))
     print(

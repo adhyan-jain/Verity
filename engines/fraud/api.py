@@ -3,6 +3,7 @@ FastAPI Service for Fraud Engine.
 Person A: Serves get_transaction, get_shap_explanation, and counterfactual endpoints.
 """
 
+import logging
 import os
 import re
 from contextlib import asynccontextmanager
@@ -10,15 +11,49 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from engines.fraud.explain import explain_transaction, load_fraud_artifact
 
+logger = logging.getLogger("engines.fraud.api")
+
 # Global dataset cache
 _DATA_DF: pd.DataFrame | None = None
+_STARTUP_ERROR: str | None = None
 BASE_TIMESTAMP = datetime(2026, 9, 18, 0, 0, 0, tzinfo=timezone.utc)
+
+FRAUD_API_KEY = os.environ.get("FRAUD_API_KEY")
+_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("FRAUD_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """
+    Validates the X-API-Key header against FRAUD_API_KEY.
+    If FRAUD_API_KEY is unset, the API refuses all protected requests rather
+    than silently running open (fail closed, not fail open).
+    """
+    if not FRAUD_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Service misconfigured: FRAUD_API_KEY is not set.",
+        )
+    if x_api_key != FRAUD_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+
+
+def require_ready() -> None:
+    """Guards routes that depend on the model/dataset having loaded at startup."""
+    if _STARTUP_ERROR is not None:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Service not ready: {_STARTUP_ERROR}",
+        )
 
 
 def get_dataset(data_path: str = "data/raw/creditcard.csv") -> pd.DataFrame:
@@ -97,11 +132,14 @@ class CounterfactualResponse(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Pre-load model artifact and dataset on server boot."""
+    global _STARTUP_ERROR
     try:
         load_fraud_artifact()
         get_dataset()
+        _STARTUP_ERROR = None
     except (FileNotFoundError, KeyError, RuntimeError, ValueError) as e:
-        print(f"Warning during startup initialization: {e}")
+        _STARTUP_ERROR = str(e)
+        logger.error("Startup initialization failed: %s", e)
     yield
 
 
@@ -114,8 +152,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=bool(_ALLOWED_ORIGINS),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -124,7 +162,11 @@ app.add_middleware(
 @app.get("/health")
 @app.get("/api/v1/fraud/health")
 def health_check() -> dict[str, Any]:
-    """Health check endpoint reporting engine status and artifact details."""
+    """Health check endpoint reporting engine status and artifact details. Unauthenticated by design for infra probes."""
+    if _STARTUP_ERROR is not None:
+        raise HTTPException(
+            status_code=503, detail=f"Service not ready: {_STARTUP_ERROR}"
+        )
     artifact = load_fraud_artifact()
     return {
         "status": "healthy",
@@ -140,6 +182,7 @@ def health_check() -> dict[str, Any]:
 @app.get(
     "/api/v1/fraud/transaction/{transaction_id}",
     response_model=TransactionRecordResponse,
+    dependencies=[Depends(require_api_key), Depends(require_ready)],
 )
 def get_transaction(transaction_id: str) -> dict[str, Any]:
     """
@@ -174,7 +217,9 @@ def get_transaction(transaction_id: str) -> dict[str, Any]:
 
 
 @app.get(
-    "/api/v1/fraud/explain/{transaction_id}", response_model=FraudExplanationResponse
+    "/api/v1/fraud/explain/{transaction_id}",
+    response_model=FraudExplanationResponse,
+    dependencies=[Depends(require_api_key), Depends(require_ready)],
 )
 def get_shap_explanation(transaction_id: str) -> dict[str, Any]:
     """
@@ -200,8 +245,16 @@ def get_shap_explanation(transaction_id: str) -> dict[str, Any]:
     return explanation
 
 
-@app.post("/api/v1/fraud/counterfactual", response_model=CounterfactualResponse)
-@app.post("/api/v1/agent/counterfactual", response_model=CounterfactualResponse)
+@app.post(
+    "/api/v1/fraud/counterfactual",
+    response_model=CounterfactualResponse,
+    dependencies=[Depends(require_api_key), Depends(require_ready)],
+)
+@app.post(
+    "/api/v1/agent/counterfactual",
+    response_model=CounterfactualResponse,
+    dependencies=[Depends(require_api_key), Depends(require_ready)],
+)
 def compute_counterfactual(request: CounterfactualRequest) -> dict[str, Any]:
     """
     Recalculates risk score and verdict when transaction parameters (e.g. Amount, Time) are altered.
@@ -228,7 +281,16 @@ def compute_counterfactual(request: CounterfactualRequest) -> dict[str, Any]:
         features=original_row, transaction_id=formatted_id
     )
 
-    # Apply overrides
+    # Apply overrides, restricted to known model features so callers can't
+    # inject arbitrary keys into the feature dict passed to the model.
+    allowed_params = set(original_row.keys())
+    invalid_params = set(request.parameter_overrides) - allowed_params
+    if invalid_params:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown parameter override(s): {sorted(invalid_params)}",
+        )
+
     modified_row = original_row.copy()
     for param, val in request.parameter_overrides.items():
         modified_row[param] = float(val)
@@ -248,7 +310,26 @@ def compute_counterfactual(request: CounterfactualRequest) -> dict[str, Any]:
     }
 
 
-@app.get("/api/v1/fraud/transactions")
+class TransactionListItem(BaseModel):
+    id: str
+    tier: str = "real_card"
+    timestamp: str
+    amount: float
+    is_ground_truth_fraud: bool
+
+
+class TransactionListResponse(BaseModel):
+    total: int
+    offset: int
+    limit: int
+    transactions: list[TransactionListItem]
+
+
+@app.get(
+    "/api/v1/fraud/transactions",
+    response_model=TransactionListResponse,
+    dependencies=[Depends(require_api_key), Depends(require_ready)],
+)
 def list_transactions(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
