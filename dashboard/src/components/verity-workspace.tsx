@@ -491,28 +491,23 @@ function EvidenceTimeline({ item, timeline }: { item: CaseFile; timeline: Ledger
   const isLive = item.tier === "real_ledger" && timeline !== null;
   const points = isLive
     ? timeline!.transactions.slice(0, 4).map((tx, index) => ({
-        time: new Date(tx.timestamp).toISOString().slice(11, 16),
+        time: formatTimingLabel(item.tier, tx.timestamp),
         label: `$${tx.amount.toLocaleString()} ${tx.direction}`,
         tone: (["teal", "amber", "signal", "ink"] as const)[index % 4],
       }))
-    : [
-        {
-          time: "02:58",
-          label: item.tier === "real_ledger" ? "$3,100 debit" : "Account observed",
-          tone: "teal" as const,
-        },
-        {
-          time: "03:22",
-          label: item.tier === "real_card" ? "$4,850 authorization" : "Velocity accelerates",
-          tone: "amber" as const,
-        },
-        { time: "03:41", label: `${item.amount} primary event`, tone: "signal" as const },
-        {
-          time: "04:02",
-          label: item.tier === "synthetic_network" ? "Funds return" : "Case created",
-          tone: "ink" as const,
-        },
-      ];
+    : item.tier === "real_card"
+      ? [
+          { time: "02:58", label: "Account observed", tone: "teal" as const },
+          { time: "03:22", label: "$4,850 authorization", tone: "amber" as const },
+          { time: "03:41", label: `${item.amount} primary event`, tone: "signal" as const },
+          { time: "04:02", label: "Case created", tone: "ink" as const },
+        ]
+      : [
+          { time: "Day 1", label: item.tier === "real_ledger" ? "$3,100 debit" : "Account observed", tone: "teal" as const },
+          { time: "Day 1", label: "Velocity accelerates", tone: "amber" as const },
+          { time: "Day 2", label: `${item.amount} primary event`, tone: "signal" as const },
+          { time: "Day 2", label: item.tier === "synthetic_network" ? "Funds return" : "Case created", tone: "ink" as const },
+        ];
   return (
     <div className="timeline-stage">
       <div className="timeline-track" />
@@ -906,7 +901,6 @@ export function VerityWorkspace() {
   return (
     <div className="min-h-screen bg-paper text-ink">
       <Masthead engines={engines} />
-<<<<<<< HEAD
 
       {/* Top Level Desk Switcher */}
       <div className="border-b border-ink/10 bg-panel/85 backdrop-blur px-4 sm:px-6 py-2.5 sticky top-0 z-30 shadow-xs">
