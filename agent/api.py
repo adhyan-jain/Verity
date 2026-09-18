@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .case_cache import BoundedCaseCache
@@ -26,6 +26,8 @@ from .grounding import ground_narrative
 from .llm import VerityLLMClient
 from .loop import run_investigation_loop
 from .tools import counterfactual as run_counterfactual
+from .str_draft import build_str_draft
+from .str_docx import build_str_docx, str_docx_filename
 
 AGENT_API_KEY = os.environ.get("AGENT_API_KEY")
 _ALLOWED_ORIGINS = [
@@ -117,6 +119,31 @@ class ChatRequest(BaseModel):
     simulate_latency: float | None = Field(
         default=0.0, description="Simulated execution latency in seconds"
     )
+
+
+class TraceEventInput(BaseModel):
+    event_id: str
+    case_id: str | None = None
+    timestamp: str
+    tool_called: str
+    tool_input: dict[str, Any] = Field(default_factory=dict)
+    tool_output_summary: str = ""
+    narration_sentence: str = ""
+
+
+class DraftSTRRequest(BaseModel):
+    """
+    The investigation result to draft an STR from — the same shape
+    `POST /api/v1/agent/investigate` already returns. Nothing is looked up
+    server-side; the draft is built purely from what's in this body, so a
+    freshly re-run investigation always produces a fresh, in-sync draft.
+    """
+
+    tier_origin: str = Field(..., description="real_card, real_ledger, or synthetic_network")
+    primary_transaction_id: str = Field(..., description="Primary transaction ID under investigation")
+    risk_score: float = Field(..., description="Case risk score from the investigation")
+    trace_events: list[TraceEventInput] = Field(..., description="Agent trace events from the investigation")
+    narrative: str = Field(default="", description="Grounded narrative from the investigation")
 
 
 # -------------------------------------------------------------
@@ -308,4 +335,53 @@ def handle_analyst_chat(req: ChatRequest) -> dict[str, Any]:
     # Wrap in 20.0s latency watchdog
     return execute_with_latency_guard(
         task_func=_chat_work, query=req.query, timeout_seconds=20.0
+    )
+
+
+
+@app.post("/api/v1/agent/draft_str/{case_id}", dependencies=[Depends(require_api_key)])
+def draft_str(case_id: str, req: DraftSTRRequest) -> dict[str, Any]:
+    """
+    Drafts a Suspicious Transaction Report (STR) from an already-completed
+    investigation. Deterministic and stateless: nothing is stored, nothing
+    is looked up server-side — the draft is built purely from `req`, so a
+    freshly re-run investigation always produces a fresh, in-sync draft.
+    Every sentence is independently re-validated against the grounding
+    rules (not trusted from the caller); sentences that fail are reported
+    in `validator_notes`, not silently dropped. See docs/STR_FEASIBILITY.md
+    and docs/ARCHITECTURE.md for what this can and cannot fill in, and why.
+    """
+    return build_str_draft(
+        case_id=case_id,
+        tier_origin=req.tier_origin,
+        primary_transaction_id=req.primary_transaction_id,
+        risk_score=req.risk_score,
+        trace_events=[evt.model_dump() for evt in req.trace_events],
+        narrative=req.narrative,
+    )
+
+
+@app.post(
+    "/api/v1/agent/draft_str/{case_id}/docx", dependencies=[Depends(require_api_key)]
+)
+def draft_str_docx(case_id: str, req: DraftSTRRequest) -> Response:
+    """
+    Same draft as `draft_str`, rendered as a downloadable .docx. Recomputed
+    on every call, never cached — identical inputs always yield the same
+    file, so there's nothing to keep in sync separately.
+    """
+    draft = build_str_draft(
+        case_id=case_id,
+        tier_origin=req.tier_origin,
+        primary_transaction_id=req.primary_transaction_id,
+        risk_score=req.risk_score,
+        trace_events=[evt.model_dump() for evt in req.trace_events],
+        narrative=req.narrative,
+    )
+    docx_bytes = build_str_docx(draft)
+    filename = str_docx_filename(case_id)
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
