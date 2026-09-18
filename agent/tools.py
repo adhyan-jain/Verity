@@ -3,7 +3,7 @@ Agent Tool Interface.
 Person C: The only way the LLM touches engine data.
 Exposes exactly 4 functions: get_transaction, get_shap_explanation, walk_graph, counterfactual.
 Supports dual-mode execution:
-- VERITY_ENV=mock (default): reads directly from contracts/mock_data/ fixtures for zero-blocking development.
+- VERITY_ENV=mock (default): reads directly from contracts/mock_data/ fixtures and trained model inference.
 - VERITY_ENV=live: dispatches requests to engine microservices with strict timeouts and automatic fallback.
 """
 
@@ -14,6 +14,8 @@ import datetime
 import logging
 from typing import Dict, Any, List, Optional
 import requests
+
+from .model_engine import get_model_engine, DEFAULT_TX_FEATURES
 
 logger = logging.getLogger("verity.agent.tools")
 
@@ -46,7 +48,6 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
     # 1. Attempt Live API if configured
     if VERITY_ENV == "live":
         try:
-            # Check card fraud API first
             resp = requests.get(f"{FRAUD_API_URL}/transaction/{transaction_id}", timeout=TOOL_TIMEOUT)
             if resp.status_code == 200:
                 return resp.json()
@@ -54,7 +55,6 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
             logger.info("Live fraud API unavailable, falling back to mock: %s", e)
 
     # 2. Mock Mode / Fallback Resolution
-    # Check mock timelines for ledger transactions
     timelines = _load_mock_file("mock_timelines.json") or []
     for timeline in timelines:
         account_id = timeline.get("account_id")
@@ -71,7 +71,6 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
                     "source_dataset": "bank.xlsx"
                 }
 
-    # Check mock typology flags for synthetic transactions
     flags = _load_mock_file("mock_typology_flags.json") or []
     for flag in flags:
         if transaction_id in flag.get("evidence_transaction_ids", []):
@@ -87,7 +86,6 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
                 "source_dataset": "synthetic_network.json"
             }
 
-    # Check default known card fraud transactions or fallback
     if "CARD" in transaction_id.upper() or transaction_id == "TX-CARD-9842":
         return {
             "id": transaction_id,
@@ -112,7 +110,6 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
             "source_dataset": "synthetic_network.json"
         }
 
-    # Generic ledger fallback
     return {
         "id": transaction_id,
         "tier": "real_ledger",
@@ -146,7 +143,6 @@ def get_shap_explanation(transaction_id: str) -> Dict[str, Any]:
         if exp.get("transaction_id") == transaction_id:
             return exp
 
-    # Default fallback explanation matching FraudExplanation schema
     return {
         "transaction_id": transaction_id,
         "risk_score": 0.89,
@@ -184,8 +180,8 @@ def get_shap_explanation(transaction_id: str) -> Dict[str, Any]:
 def walk_graph(account_id: str, tier: str = "real_ledger", depth: int = 2) -> Dict[str, Any]:
     """
     Traverses transactions/nodes matching GraphWalkStep contract.
-    - For tier == 'real_ledger': Returns single-account chronological transitions (no false cross-account cartel claims).
-    - For tier == 'synthetic_network': Returns multi-party graph hops demonstrating FATF typologies.
+    - For tier == 'real_ledger': Returns single-account chronological transitions with balance metrics.
+    - For tier == 'synthetic_network': Returns multi-party graph hops with volume tracking.
     """
     # 1. Attempt Live API if configured
     if VERITY_ENV == "live":
@@ -208,7 +204,6 @@ def walk_graph(account_id: str, tier: str = "real_ledger", depth: int = 2) -> Di
     steps: List[Dict[str, Any]] = []
 
     if tier == "real_ledger":
-        # Look up transactions for this account in mock_timelines
         timelines = _load_mock_file("mock_timelines.json") or []
         acct_txs = []
         for t in timelines:
@@ -217,29 +212,28 @@ def walk_graph(account_id: str, tier: str = "real_ledger", depth: int = 2) -> Di
                 break
 
         if not acct_txs:
-            # Default to ACC-1092 transactions if account not specifically indexed
             acct_txs = [
-                {"id": "TX-LEDGER-3001", "timestamp": "2026-09-14T10:00:00Z", "amount": 1200.0, "narration": "INWARD RTGS SUPPLIER"},
-                {"id": "TX-LEDGER-3005", "timestamp": "2026-09-15T11:30:00Z", "amount": 2500.0, "narration": "VENDOR PAYROLL"},
-                {"id": "TX-LEDGER-3011", "timestamp": "2026-09-16T14:15:00Z", "amount": 12500.0, "narration": "BULK UNREGISTERED TXFR"},
-                {"id": "TX-LEDGER-3012", "timestamp": "2026-09-16T15:20:00Z", "amount": 2400.0, "narration": "URGENT OVERDRAFT TXFR"}
+                {"id": "TX-LEDGER-3001", "timestamp": "2026-09-14T10:00:00Z", "amount": 1200.0, "balance": 14200.0, "narration": "INWARD RTGS SUPPLIER"},
+                {"id": "TX-LEDGER-3005", "timestamp": "2026-09-15T11:30:00Z", "amount": 2500.0, "balance": 11700.0, "narration": "VENDOR PAYROLL"},
+                {"id": "TX-LEDGER-3011", "timestamp": "2026-09-16T14:15:00Z", "amount": 12500.0, "balance": -800.0, "narration": "BULK UNREGISTERED TXFR"},
+                {"id": "TX-LEDGER-3012", "timestamp": "2026-09-16T15:20:00Z", "amount": 2400.0, "balance": -3200.0, "narration": "URGENT OVERDRAFT TXFR"}
             ]
 
         for idx, tx in enumerate(acct_txs[:max(1, depth * 2)]):
             steps.append({
                 "step_index": idx + 1,
                 "from_account": account_id,
-                "to_account": account_id,  # Disclosed as single account chronological sequence
+                "to_account": account_id,
                 "tier": "real_ledger",
                 "amount": float(tx.get("amount", 0.0)),
+                "balance": float(tx.get("balance", 0.0)),
                 "timestamp": tx.get("timestamp", "2026-09-16T12:00:00Z"),
                 "narration": tx.get("narration"),
                 "tool_call_id": f"TOOL-WALK-{uuid.uuid4().hex[:6].upper()}"
             })
 
     else:
-        # Synthetic network multi-hop walk
-        # ACC-SYN-401 -> ACC-SYN-402 -> ACC-SYN-403 -> ACC-SYN-401 (Round-tripping loop)
+        # Synthetic network multi-hop walk (Round-tripping loop)
         synthetic_hops = [
             ("ACC-SYN-401", "ACC-SYN-402", 49000.0, "2026-09-18T06:00:00Z", "CONSULTING RETAINER FEE"),
             ("ACC-SYN-402", "ACC-SYN-403", 48200.0, "2026-09-18T07:15:00Z", "SUB-CONTRACT ADVISORY"),
@@ -267,8 +261,8 @@ def walk_graph(account_id: str, tier: str = "real_ledger", depth: int = 2) -> Di
 
 def counterfactual(transaction_id: str, parameter_overrides: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Re-runs the relevant engine with modified parameters (e.g. amount or timestamp)
-    and returns a fresh explanation/score rather than hallucinating answers.
+    Re-runs the calibrated mathematical model with modified parameters (e.g. amount or timestamp)
+    and returns a fresh explanation/score rather than hallucinating or using hardcoded thresholds.
     """
     # 1. Attempt Live API if configured
     if VERITY_ENV == "live":
@@ -281,50 +275,27 @@ def counterfactual(transaction_id: str, parameter_overrides: Dict[str, Any]) -> 
             if resp.status_code == 200:
                 return resp.json()
         except requests.exceptions.RequestException as e:
-            logger.info("Live counterfactual API unavailable, falling back to mock: %s", e)
+            logger.info("Live counterfactual API unavailable, falling back to model engine: %s", e)
 
-    # 2. Deterministic Mock Evaluation
-    original_risk_score = 0.89
-    original_verdict = "flagged"
+    # 2. True Model-Backed Recalculation via ModelEngine
+    engine = get_model_engine()
+    # Use baseline transaction feature vector for transaction_id
+    base_features = dict(DEFAULT_TX_FEATURES)
+    
+    # If transaction amount is known from get_transaction, update it
+    tx = get_transaction(transaction_id)
+    if "amount" in tx and tx["amount"] > 0:
+        base_features["Amount"] = float(tx["amount"])
 
-    recalculated_risk_score = original_risk_score
-    recalculated_verdict = original_verdict
-
-    # Check for Amount modification
-    if "Amount" in parameter_overrides or "amount" in parameter_overrides:
-        new_amt = float(parameter_overrides.get("Amount", parameter_overrides.get("amount", 4850.0)))
-        if new_amt <= 200.0:
-            recalculated_risk_score = 0.18
-            recalculated_verdict = "clear"
-        elif new_amt <= 1000.0:
-            recalculated_risk_score = 0.38
-            recalculated_verdict = "clear"
-        elif new_amt >= 10000.0:
-            recalculated_risk_score = 0.97
-            recalculated_verdict = "flagged"
-        else:
-            # Scaled interpolation
-            recalculated_risk_score = round(min(0.95, max(0.15, (new_amt / 5000.0) * 0.85)), 2)
-            recalculated_verdict = "flagged" if recalculated_risk_score >= 0.5 else "clear"
-
-    # Check for Time modification (e.g. regular business hours vs 3 AM)
-    if "Time" in parameter_overrides or "time" in parameter_overrides:
-        time_val = str(parameter_overrides.get("Time", parameter_overrides.get("time", "")))
-        if "14:00" in time_val or "day" in time_val.lower():
-            recalculated_risk_score = max(0.12, recalculated_risk_score - 0.20)
-            if recalculated_risk_score < 0.5:
-                recalculated_verdict = "clear"
-
+    eval_result = engine.evaluate_counterfactual(base_features, parameter_overrides)
+    
     return {
         "transaction_id": transaction_id,
-        "original_risk_score": original_risk_score,
-        "recalculated_risk_score": recalculated_risk_score,
-        "original_verdict": original_verdict,
-        "recalculated_verdict": recalculated_verdict,
+        "original_risk_score": eval_result["original_risk_score"],
+        "recalculated_risk_score": eval_result["recalculated_risk_score"],
+        "original_verdict": eval_result["original_verdict"],
+        "recalculated_verdict": eval_result["recalculated_verdict"],
         "modifications": parameter_overrides,
-        "explanation": (
-            f"Counterfactual re-evaluation: Modifying parameters to {parameter_overrides} shifted "
-            f"the risk score from {original_risk_score} to {recalculated_risk_score} "
-            f"(verdict changed from {original_verdict} to {recalculated_verdict})."
-        )
+        "feature_attribution_deltas": eval_result["feature_attribution_deltas"],
+        "explanation": eval_result["explanation"]
     }

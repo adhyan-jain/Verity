@@ -1,11 +1,20 @@
 """
 Grounding Enforcement Filter.
-Person C: Enforces that narrative sentences must cite a valid AgentTraceEvent ID.
-Filters out any hallucinated sentences at code level before output reaches the dashboard.
+Person C: Strict Evidence-Only Grounding.
+Every narrative sentence must be strictly backed by an actual AgentTraceEvent.
+Eliminates any hallucinated claims, entities, or offshore assertions at code level.
 """
 
 import re
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Set
+
+# Suspicious / speculative terminology that cannot appear without explicit evidence
+SPECULATIVE_PREDICATES = {
+    "offshore", "cayman", "swiss", "panama", "cyprus", "shell", "haven",
+    "cartel", "smuggling", "bribe", "extortion", "terrorist", "laundering ring",
+    "mule", "straw man", "front company", "unregistered transmitter",
+    "unauthorized access", "hacked", "stolen credentials"
+}
 
 
 def _split_into_sentences(text: str) -> List[str]:
@@ -16,16 +25,15 @@ def _split_into_sentences(text: str) -> List[str]:
     if not text:
         return []
 
-    # Replace periods in common currency/decimal formats with a placeholder
-    # e.g., $4,850.00 -> $4,850<DOT>00
+    # Protect decimals in currency: $4,850.00 -> $4,850<DOT>00
     cleaned = re.sub(r'(\$\d[\d,]*)\.(\d+)', r'\1<DOT>\2', text)
     cleaned = re.sub(r'(\b\d+)\.(\d+)\b', r'\1<DOT>\2', cleaned)
     # Protect common abbreviations
     cleaned = re.sub(r'\b(e\.g\.|i\.e\.|vs\.|approx\.|dr\.|mr\.)', lambda m: m.group(1).replace('.', '<DOT>'), cleaned, flags=re.IGNORECASE)
-    # Protect AM/PM periods
+    # Protect AM/PM
     cleaned = re.sub(r'\b(A\.M\.|P\.M\.)', lambda m: m.group(1).replace('.', '<DOT>'), cleaned, flags=re.IGNORECASE)
 
-    # Split on sentence terminals (. ! ?) followed by whitespace or end of string
+    # Split on sentence terminals followed by whitespace
     raw_sentences = re.split(r'(?<=[.!?])\s+', cleaned)
 
     sentences = []
@@ -37,53 +45,107 @@ def _split_into_sentences(text: str) -> List[str]:
     return sentences
 
 
-def _normalize_tokens(text: str) -> set:
-    """Extracts lowercase alpha-numeric tokens for similarity comparison."""
+def _extract_tokens(text: str) -> Set[str]:
+    """Extracts alphanumeric tokens in lowercase."""
     return set(re.findall(r'[a-zA-Z0-9_\-]+', text.lower()))
 
 
-def is_sentence_grounded(candidate: str, approved_sentences: List[str], trace_events: List[Dict[str, Any]]) -> bool:
+def _extract_factual_entities(text: str) -> Dict[str, Set[str]]:
     """
-    Determines if a candidate sentence is strictly grounded in the approved trace events:
-    1. Direct match with an approved narration_sentence.
-    2. Explicit citation of an approved event_id (e.g. [EVT-101] or EVT-101).
-    3. Token overlap threshold (>70% of candidate informative tokens present in approved events).
+    Extracts high-risk factual assertions:
+    - identifiers: TX-..., ACC-..., EVT-...
+    - numbers and monetary values: amounts, decimals
+    - times: HH:MM, timestamps
+    - content words: nouns/adjectives/predicates
+    """
+    clean = text.lower()
+    ids = set(re.findall(r'\b(?:tx|acc|evt|case|flag)-[a-zA-Z0-9_\-]+\b', clean))
+    numbers = set(re.findall(r'\b\d+(?:,\d+)*(?:\.\d+)?\b', text))
+    times = set(re.findall(r'\b\d{1,2}:\d{2}(?:\s*[ap]m)?\b', clean))
+    words = _extract_tokens(clean)
+
+    return {
+        "ids": ids,
+        "numbers": numbers,
+        "times": times,
+        "words": words
+    }
+
+
+def is_sentence_strictly_grounded(
+    candidate: str,
+    approved_sentences: List[str],
+    trace_events: List[Dict[str, Any]]
+) -> Tuple[bool, Optional[str]]:
+    """
+    Strict evidence-only grounding rule:
+    1. Direct match with an approved narration_sentence -> PASS
+    2. Explicit citation of valid event_id (e.g. [EVT-101]) with zero unsupported claims -> PASS
+    3. Factual containment check:
+       - Every ID (TX-..., ACC-...) must be in trace evidence.
+       - Every numeric figure / currency amount must be in trace evidence.
+       - NO unbacked speculative terms (offshore, shell, cartel, etc.) unless explicitly present in trace evidence.
+       - Core informative words must be supported by the evidence corpus.
     """
     cand_norm = candidate.strip().lower()
 
-    # 1. Direct or substring matching against approved narration sentences
-    for approved in approved_sentences:
-        app_norm = approved.strip().lower()
-        if cand_norm in app_norm or app_norm in cand_norm:
-            return True
+    # Rule 1: Exact or direct normalized match with an approved narration sentence
+    for app in approved_sentences:
+        app_norm = app.strip().lower()
+        if cand_norm == app_norm or cand_norm in app_norm or app_norm in cand_norm:
+            return True, None
 
-    # 2. Check for explicit event_id citations
-    for event in trace_events:
-        evt_id = event.get("event_id", "").lower()
-        if evt_id and evt_id in cand_norm:
-            return True
+    # Build the complete verified evidence corpus from all trace events
+    evidence_text_parts = []
+    for evt in trace_events:
+        evidence_text_parts.append(evt.get("narration_sentence", ""))
+        evidence_text_parts.append(evt.get("tool_output_summary", ""))
+        evidence_text_parts.append(str(evt.get("tool_input", {})))
+        evidence_text_parts.append(evt.get("event_id", ""))
+    
+    evidence_corpus = " ".join(evidence_text_parts)
+    evidence_facts = _extract_factual_entities(evidence_corpus)
+    cand_facts = _extract_factual_entities(candidate)
 
-    # 3. Informative token containment check
-    candidate_tokens = _normalize_tokens(candidate)
-    # Remove common stop words
-    stopwords = {"the", "a", "an", "is", "was", "were", "and", "or", "to", "for", "in", "on", "at", "of", "by", "this", "that", "it"}
-    informative_tokens = candidate_tokens - stopwords
+    # Check 1: Unsupported entity IDs
+    for ident in cand_facts["ids"]:
+        if not any(ident in ev_id for ev_id in evidence_facts["ids"]) and ident not in evidence_corpus.lower():
+            return False, f"Unsupported entity ID: '{ident}'"
 
-    if not informative_tokens:
-        return False
+    # Check 2: Unsupported numbers or amounts
+    for num in cand_facts["numbers"]:
+        # Skip trivial single digits (e.g. '1', '2' in list indices)
+        if len(num) > 1 and num not in evidence_corpus:
+            return False, f"Unsupported numeric value: '{num}'"
 
-    approved_corpus = set()
-    for approved in approved_sentences:
-        approved_corpus.update(_normalize_tokens(approved))
-    for event in trace_events:
-        approved_corpus.update(_normalize_tokens(event.get("tool_output_summary", "")))
-        approved_corpus.update(_normalize_tokens(str(event.get("tool_input", {}))))
+    # Check 3: Unsupported speculative terms (The Offshore Account Test)
+    cand_words = cand_facts["words"]
+    for spec in SPECULATIVE_PREDICATES:
+        if spec in cand_words:
+            # Check if this speculative word exists in the evidence corpus
+            if spec not in evidence_facts["words"]:
+                return False, f"Unsupported speculative claim: '{spec}'"
 
-    overlap = informative_tokens.intersection(approved_corpus)
-    overlap_ratio = len(overlap) / len(informative_tokens)
+    # Check 4: Substantial factual containment (reject sentences introducing new facts)
+    stopwords = {
+        "the", "a", "an", "is", "was", "were", "and", "or", "to", "for",
+        "in", "on", "at", "of", "by", "this", "that", "it", "with", "from",
+        "has", "have", "had", "been", "indicates", "detected", "retrieved",
+        "analysis", "found", "exceeded", "representing", "processed", "also",
+        "then", "furthermore", "which", "as", "into", "within", "exhibits"
+    }
+    informative_cand_words = cand_words - stopwords
 
-    # Must have high overlap with facts emitted by the trace events
-    return overlap_ratio >= 0.70
+    if not informative_cand_words:
+        return False, "Sentence contains no verifiable informative content"
+
+    # Check how many informative words are completely absent from evidence
+    unsupported_words = informative_cand_words - evidence_facts["words"]
+    # Allow at most 1 connecting word variation; all key domain terms must be grounded
+    if len(unsupported_words) > 1:
+        return False, f"Unsupported factual terms: {unsupported_words}"
+
+    return True, None
 
 
 def ground_narrative(
@@ -92,31 +154,30 @@ def ground_narrative(
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Grounding rule: The agent's narrative field can ONLY be assembled from
-    narration_sentence values that came from verified AgentTraceEvents.
+    sentences that pass strict evidence verification against AgentTraceEvents.
 
-    If a raw_narrative (from an LLM call) is passed:
-    - Splits it into candidate sentences.
-    - Strips any candidate sentence that is not grounded in the emitted AgentTraceEvents.
-    - If all candidate sentences are dropped, falls back to trace_events narration_sentences.
+    If raw_narrative (from LLM) is passed:
+    - Splits into candidate sentences.
+    - Runs strict evidence verification.
+    - Strips any sentence with unsupported claims.
+    - If all candidate sentences fail, falls back to approved trace narration sentences.
     """
-    # 1. Collect verified narration sentences from valid trace events
     valid_events = [e for e in trace_events if e.get("event_id") and e.get("narration_sentence")]
     approved_sentences = [e["narration_sentence"].strip() for e in valid_events]
 
-    # 2. If no raw narrative was provided, perform deterministic assembly
     if not raw_narrative or not raw_narrative.strip():
         grounded_narrative = " ".join(approved_sentences)
         return grounded_narrative, valid_events
 
-    # 3. If raw narrative was provided, filter it sentence-by-sentence
     candidate_sentences = _split_into_sentences(raw_narrative)
     grounded_sentences = []
 
     for candidate in candidate_sentences:
-        if is_sentence_grounded(candidate, approved_sentences, valid_events):
+        is_grounded, _ = is_sentence_strictly_grounded(candidate, approved_sentences, valid_events)
+        if is_grounded:
             grounded_sentences.append(candidate)
 
-    # 4. Fallback if the LLM hallucinated entirely and everything was stripped
+    # Fallback to approved sentences if all candidate sentences were stripped
     if not grounded_sentences:
         grounded_narrative = " ".join(approved_sentences)
     else:
@@ -135,12 +196,15 @@ def audit_grounding(trace_events: List[Dict[str, Any]], raw_narrative: str) -> D
 
     retained = []
     pruned = []
+    rejection_reasons = {}
 
     for candidate in candidate_sentences:
-        if is_sentence_grounded(candidate, approved_sentences, valid_events):
+        is_grounded, reason = is_sentence_strictly_grounded(candidate, approved_sentences, valid_events)
+        if is_grounded:
             retained.append(candidate)
         else:
             pruned.append(candidate)
+            rejection_reasons[candidate] = reason or "Failed evidence verification"
 
     return {
         "total_candidate_sentences": len(candidate_sentences),
@@ -148,5 +212,6 @@ def audit_grounding(trace_events: List[Dict[str, Any]], raw_narrative: str) -> D
         "pruned_count": len(pruned),
         "retained_sentences": retained,
         "pruned_sentences": pruned,
+        "rejection_reasons": rejection_reasons,
         "grounded_narrative": " ".join(retained) if retained else " ".join(approved_sentences)
     }
