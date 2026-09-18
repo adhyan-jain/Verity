@@ -6,6 +6,8 @@ This project was built with [Lovable](https://lovable.dev).
 
 **Live app**: https://jawdrop-ui-studio.lovable.app
 
+**System Architecture**: https://excalidraw.com/#json=gNtRkjp_1o7WqT6TTvCVk,MjFOslReGBL_Nn_jrLAzpA
+
 ## Build with Lovable
 
 Continue developing this project in the [Lovable editor](https://lovable.dev/projects/bd9729f0-06ab-411e-b2be-2b2d0cd84f5d).
