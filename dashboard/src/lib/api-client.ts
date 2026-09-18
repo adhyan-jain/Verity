@@ -6,10 +6,11 @@
  * whole point of the dual-engine + agent design is that a down service never
  * blocks the desk — see `docs/VERITY_BUILD_SPEC.md` section 6.
  *
- * NOTE: embedding `VITE_FRAUD_API_KEY` in a client bundle is a known
- * prototype-only shortcut (the key is visible to anyone who opens the
- * bundle). Flagged in ARCHITECTURE.md as a follow-up for a real deployment
- * (proxy fraud calls through the TanStack Start server instead).
+ * NOTE: embedding all four `VITE_*_API_KEY` values in a client bundle is a
+ * known prototype-only shortcut (each key is visible to anyone who opens
+ * the bundle). Flagged in ARCHITECTURE.md as a follow-up for a real
+ * deployment (proxy every engine/agent call through the TanStack Start
+ * server instead, keeping keys server-side only).
  */
 
 const AGENT_BASE = import.meta.env.VITE_AGENT_API_URL ?? "http://localhost:8000";
@@ -18,6 +19,9 @@ const LEDGER_BASE = import.meta.env.VITE_LEDGER_API_URL ?? "http://localhost:800
 const TYPOLOGY_BASE =
   import.meta.env.VITE_TYPOLOGY_API_URL ?? "http://localhost:8003/api/v1/typology";
 const FRAUD_API_KEY = import.meta.env.VITE_FRAUD_API_KEY ?? "";
+const LEDGER_API_KEY = import.meta.env.VITE_LEDGER_API_KEY ?? "";
+const TYPOLOGY_API_KEY = import.meta.env.VITE_TYPOLOGY_API_KEY ?? "";
+const AGENT_API_KEY = import.meta.env.VITE_AGENT_API_KEY ?? "";
 const HEALTH_TIMEOUT_MS = 2500;
 const REQUEST_TIMEOUT_MS = 8000;
 
@@ -158,7 +162,7 @@ export async function investigateCase(
       `${AGENT_BASE}/api/v1/agent/investigate`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-API-Key": AGENT_API_KEY },
         body: JSON.stringify({
           case_id: caseId,
           transaction_id: transactionId,
@@ -193,7 +197,7 @@ export async function fetchFirstLedgerAccountId(): Promise<string | null> {
   try {
     const accounts = await fetchJson<{ account_id: string }[]>(
       `${LEDGER_BASE}/accounts`,
-      {},
+      { headers: { "X-API-Key": LEDGER_API_KEY } },
       REQUEST_TIMEOUT_MS,
     );
     return accounts[0]?.account_id ?? null;
@@ -206,7 +210,7 @@ export async function fetchLiveTimeline(accountId: string): Promise<LedgerTimeli
   try {
     return await fetchJson<LedgerTimeline>(
       `${LEDGER_BASE}/timeline/${encodeURIComponent(accountId)}`,
-      {},
+      { headers: { "X-API-Key": LEDGER_API_KEY } },
       REQUEST_TIMEOUT_MS,
     );
   } catch {
@@ -216,7 +220,11 @@ export async function fetchLiveTimeline(accountId: string): Promise<LedgerTimeli
 
 export async function fetchLiveTypologyNetwork(): Promise<TypologyNetwork | null> {
   try {
-    return await fetchJson<TypologyNetwork>(`${TYPOLOGY_BASE}/network`, {}, REQUEST_TIMEOUT_MS);
+    return await fetchJson<TypologyNetwork>(
+      `${TYPOLOGY_BASE}/network`,
+      { headers: { "X-API-Key": TYPOLOGY_API_KEY } },
+      REQUEST_TIMEOUT_MS,
+    );
   } catch {
     return null;
   }
@@ -252,7 +260,7 @@ export async function askCounterfactualOrChat(
       `${AGENT_BASE}/api/v1/agent/counterfactual`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-API-Key": AGENT_API_KEY },
         body: JSON.stringify({
           transaction_id: transactionId,
           parameter_overrides: { Amount: overrideAmount },
@@ -279,7 +287,7 @@ export async function askCounterfactualOrChat(
     `${AGENT_BASE}/api/v1/agent/chat`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-API-Key": AGENT_API_KEY },
       body: JSON.stringify({ case_id: caseId, query }),
     },
     REQUEST_TIMEOUT_MS,

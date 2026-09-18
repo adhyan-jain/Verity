@@ -3,8 +3,11 @@ Unit tests for Latency Fallback & Cached Q&A (agent/fallback.py).
 Verifies disclosure notices and trigger pattern matching for the 4 core judge questions.
 """
 
-import pytest
-from agent.fallback import get_cached_answer, execute_with_latency_guard, STANDARD_FALLBACK_NOTICE
+from agent.fallback import (
+    STANDARD_FALLBACK_NOTICE,
+    execute_with_latency_guard,
+    get_cached_answer,
+)
 
 
 def test_fallback_q1_why_flagged():
@@ -33,7 +36,9 @@ def test_fallback_q3_similar_cases():
 
 
 def test_fallback_q4_counterparty_not_flagged():
-    ans = get_cached_answer("why wasn't this other account flagged for this transaction?")
+    ans = get_cached_answer(
+        "why wasn't this other account flagged for this transaction?"
+    )
     assert ans is not None
     assert ans["is_fallback"] is True
     assert ans["question_id"] == "q4_why_other_account_not_flagged"
@@ -46,12 +51,15 @@ def test_fallback_unmatched_query():
 
 
 def test_latency_guard_timeout():
+    import time
+
     def slow_task():
-        # Simulated slow task
+        time.sleep(0.05)
         return {"data": "slow"}
 
-    # Force immediate timeout via 0.0s limit
-    res = execute_with_latency_guard(slow_task, query="why was this flagged", timeout_seconds=0.0)
+    # timeout_seconds well below the task's real sleep forces a deterministic timeout
+    res = execute_with_latency_guard(
+        slow_task, query="why was this flagged", timeout_seconds=0.01
+    )
     assert res.get("is_fallback") is True
     assert "Execution exceeded latency limit" in res.get("fallback_reason", "")
-

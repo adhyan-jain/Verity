@@ -15,12 +15,20 @@ import os
 import subprocess
 import sys
 
-from _services import ROOT, ensure_fraud_model_trained, load_env_file, start_all_backend_services, stop_all
+from _services import (
+    ROOT,
+    ensure_fraud_model_trained,
+    load_env_file,
+    start_all_backend_services,
+    stop_all,
+)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--no-dashboard", action="store_true", help="Skip starting the Vite dev server")
+    parser.add_argument(
+        "--no-dashboard", action="store_true", help="Skip starting the Vite dev server"
+    )
     args = parser.parse_args()
 
     load_env_file()

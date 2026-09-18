@@ -4,9 +4,10 @@ Person B: Serves FATF typology flags, multi-hop GraphWalkStep trajectories,
 and interactive synthetic graph structures for the analyst dashboard.
 """
 
+import os
 from typing import Any
 
-from fastapi import FastAPI, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 try:
@@ -22,17 +23,39 @@ except (ImportError, ValueError):
         load_synthetic_network,
     )
 
+TYPOLOGY_API_KEY = os.environ.get("TYPOLOGY_API_KEY")
+_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("TYPOLOGY_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """
+    Validates the X-API-Key header against TYPOLOGY_API_KEY.
+    Fails closed (503) if TYPOLOGY_API_KEY is unset, matching the fraud
+    engine's require_api_key pattern (engines/fraud/api.py).
+    """
+    if not TYPOLOGY_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Service misconfigured: TYPOLOGY_API_KEY is not set.",
+        )
+    if x_api_key != TYPOLOGY_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+
+
 app = FastAPI(
     title="Verity Typology Engine API",
     description="FATF Typology Detection & Synthetic Network Graph Service",
     version="1.0.0",
 )
 
-# Enable CORS for local dev dashboard
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=bool(_ALLOWED_ORIGINS),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -65,15 +88,19 @@ def health_check() -> dict[str, str]:
     }
 
 
-@app.get("/api/v1/typology/flags")
-def list_typology_flags() -> list[dict[str, Any]]:
+@app.get("/api/v1/typology/flags", dependencies=[Depends(require_api_key)])
+def list_typology_flags(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict[str, Any]]:
     """
-    Returns all detected TypologyFlag records on the synthetic laundering network.
+    Returns detected TypologyFlag records on the synthetic laundering network, paginated.
     """
-    return get_flags()
+    flags = get_flags()
+    return flags[offset : offset + limit]
 
 
-@app.get("/api/v1/typology/network")
+@app.get("/api/v1/typology/network", dependencies=[Depends(require_api_key)])
 def get_synthetic_network() -> dict[str, Any]:
     """
     Returns full node-edge structure and metadata of the synthetic FATF network for UI graph rendering.
@@ -81,7 +108,7 @@ def get_synthetic_network() -> dict[str, Any]:
     return get_network()
 
 
-@app.get("/api/v1/typology/walk/{account_id}")
+@app.get("/api/v1/typology/walk/{account_id}", dependencies=[Depends(require_api_key)])
 def walk_synthetic_graph(
     account_id: str, depth: int = Query(default=2, ge=1, le=5)
 ) -> list[dict[str, Any]]:
@@ -130,7 +157,7 @@ def walk_synthetic_graph(
     return walk_steps
 
 
-@app.get("/api/v1/typology/evaluation")
+@app.get("/api/v1/typology/evaluation", dependencies=[Depends(require_api_key)])
 def get_adversarial_evaluation() -> dict[str, Any]:
     """
     Returns precision/recall and evaluation report against held-out adversarial test cases.

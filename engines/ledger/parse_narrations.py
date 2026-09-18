@@ -123,7 +123,7 @@ def parse_bank_ledger(
         raw_df["CHQ.NO."]
         .fillna("")
         .astype(str)
-        .str.replace(".0", "", regex=False)
+        .str.replace(r"\.0$", "", regex=True)
         .str.strip()
     )
     chq_series = np.where(chq_series.isin(["", "nan", "None"]), None, chq_series)

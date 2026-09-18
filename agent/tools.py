@@ -7,31 +7,47 @@ Supports dual-mode execution:
 - VERITY_ENV=live: dispatches requests to engine microservices with strict timeouts and automatic fallback.
 """
 
-import os
 import json
-import uuid
-import datetime
 import logging
-from typing import Dict, Any, List, Optional
+import os
+import uuid
+from typing import Any
+
 import requests
 
-from .model_engine import get_model_engine, DEFAULT_TX_FEATURES
+from .model_engine import DEFAULT_TX_FEATURES, get_model_engine
 
 logger = logging.getLogger("verity.agent.tools")
+
+
+class TransactionNotFoundError(Exception):
+    """Raised when a transaction ID matches no known fixture, live record, or ID-prefix pattern."""
+
 
 # Configuration & Endpoints
 VERITY_ENV = os.getenv("VERITY_ENV", "mock").lower()
 FRAUD_API_URL = os.getenv("FRAUD_API_URL", "http://localhost:8001/api/v1/fraud")
 LEDGER_API_URL = os.getenv("LEDGER_API_URL", "http://localhost:8002/api/v1/ledger")
-TYPOLOGY_API_URL = os.getenv("TYPOLOGY_API_URL", "http://localhost:8003/api/v1/typology")
+TYPOLOGY_API_URL = os.getenv(
+    "TYPOLOGY_API_URL", "http://localhost:8003/api/v1/typology"
+)
 TOOL_TIMEOUT = float(os.getenv("AGENT_TOOL_TIMEOUT", "2.0"))
-# The fraud engine fails closed on this (engines/fraud/api.py::require_api_key); every
-# live-mode call into it must forward the same key the fraud service was started with.
+# Each engine fails closed on its own require_api_key dependency; every
+# live-mode call into it must forward the matching key that engine was
+# started with.
 FRAUD_API_KEY = os.getenv("FRAUD_API_KEY", "")
 _FRAUD_AUTH_HEADERS = {"X-API-Key": FRAUD_API_KEY} if FRAUD_API_KEY else {}
+LEDGER_API_KEY = os.getenv("LEDGER_API_KEY", "")
+_LEDGER_AUTH_HEADERS = {"X-API-Key": LEDGER_API_KEY} if LEDGER_API_KEY else {}
+TYPOLOGY_API_KEY = os.getenv("TYPOLOGY_API_KEY", "")
+_TYPOLOGY_AUTH_HEADERS = {"X-API-Key": TYPOLOGY_API_KEY} if TYPOLOGY_API_KEY else {}
 
 # Path to mock data fixtures
-FIXTURES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "contracts", "mock_data")
+FIXTURES_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "contracts",
+    "mock_data",
+)
 
 
 def _load_mock_file(filename: str) -> Any:
@@ -45,7 +61,7 @@ def _load_mock_file(filename: str) -> Any:
     return None
 
 
-def get_transaction(transaction_id: str) -> Dict[str, Any]:
+def get_transaction(transaction_id: str) -> dict[str, Any]:
     """
     Retrieves transaction details matching TransactionRecord contract.
     Routes to the engine that actually owns this ID: the three engines use
@@ -61,13 +77,28 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
     if VERITY_ENV == "live":
         try:
             if "LEDGER" in upper_id:
-                resp = requests.get(f"{LEDGER_API_URL}/transaction/{transaction_id}", timeout=TOOL_TIMEOUT)
+                resp = requests.get(
+                    f"{LEDGER_API_URL}/transaction/{transaction_id}",
+                    headers=_LEDGER_AUTH_HEADERS,
+                    timeout=TOOL_TIMEOUT,
+                )
                 if resp.status_code == 200:
                     return resp.json()
             elif "SYNTH" in upper_id or "SYN" in upper_id:
-                resp = requests.get(f"{TYPOLOGY_API_URL}/network", timeout=TOOL_TIMEOUT)
+                resp = requests.get(
+                    f"{TYPOLOGY_API_URL}/network",
+                    headers=_TYPOLOGY_AUTH_HEADERS,
+                    timeout=TOOL_TIMEOUT,
+                )
                 if resp.status_code == 200:
-                    edge = next((e for e in resp.json().get("edges", []) if e.get("id") == transaction_id), None)
+                    edge = next(
+                        (
+                            e
+                            for e in resp.json().get("edges", [])
+                            if e.get("id") == transaction_id
+                        ),
+                        None,
+                    )
                     if edge:
                         return {
                             "id": edge["id"],
@@ -80,11 +111,19 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
                             "source_dataset": "synthetic_network.json",
                         }
             else:
-                resp = requests.get(f"{FRAUD_API_URL}/transaction/{transaction_id}", headers=_FRAUD_AUTH_HEADERS, timeout=TOOL_TIMEOUT)
+                resp = requests.get(
+                    f"{FRAUD_API_URL}/transaction/{transaction_id}",
+                    headers=_FRAUD_AUTH_HEADERS,
+                    timeout=TOOL_TIMEOUT,
+                )
                 if resp.status_code == 200:
                     return resp.json()
         except requests.exceptions.RequestException as e:
-            logger.info("Live engine API unavailable for %s, falling back to mock: %s", transaction_id, e)
+            logger.info(
+                "Live engine API unavailable for %s, falling back to mock: %s",
+                transaction_id,
+                e,
+            )
 
     # 2. Mock Mode / Fallback Resolution
     timelines = _load_mock_file("mock_timelines.json") or []
@@ -100,7 +139,7 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
                     "amount": float(tx.get("amount", 0.0)),
                     "direction": tx.get("direction", "debit"),
                     "raw_narration": tx.get("narration"),
-                    "source_dataset": "bank.xlsx"
+                    "source_dataset": "bank.xlsx",
                 }
 
     flags = _load_mock_file("mock_typology_flags.json") or []
@@ -115,7 +154,7 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
                 "amount": 49000.0,
                 "direction": "debit",
                 "raw_narration": f"FATF {flag.get('typology', 'TRANSFER').upper()}",
-                "source_dataset": "synthetic_network.json"
+                "source_dataset": "synthetic_network.json",
             }
 
     if "CARD" in transaction_id.upper() or transaction_id == "TX-CARD-9842":
@@ -127,7 +166,7 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
             "amount": 4850.00,
             "direction": "debit",
             "raw_narration": None,
-            "source_dataset": "creditcard.csv"
+            "source_dataset": "creditcard.csv",
         }
 
     if "SYNTH" in transaction_id.upper() or "SYN" in transaction_id.upper():
@@ -139,22 +178,20 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
             "amount": 49000.0,
             "direction": "debit",
             "raw_narration": "CONSULTING RETAINER FEE",
-            "source_dataset": "synthetic_network.json"
+            "source_dataset": "synthetic_network.json",
         }
 
-    return {
-        "id": transaction_id,
-        "tier": "real_ledger",
-        "timestamp": "2026-09-16T14:15:00Z",
-        "account_id": "ACC-1092",
-        "amount": 12500.0,
-        "direction": "debit",
-        "raw_narration": "BULK UNREGISTERED TXFR",
-        "source_dataset": "bank.xlsx"
-    }
+    # No fixture, live record, or recognized ID-prefix pattern matched this ID.
+    # Previously this fell through to a hardcoded, fabricated "BULK
+    # UNREGISTERED TXFR" ledger transaction for literally any unrecognized
+    # ID — dangerous in a fraud-detection tool, since downstream code would
+    # treat fabricated data as ground truth. Raise instead.
+    raise TransactionNotFoundError(
+        f"Transaction '{transaction_id}' not found in fixtures, live engines, or any recognized ID pattern."
+    )
 
 
-def get_shap_explanation(transaction_id: str) -> Dict[str, Any]:
+def get_shap_explanation(transaction_id: str) -> dict[str, Any]:
     """
     Retrieves SHAP factor breakdown matching FraudExplanation contract.
     Preserves strict separation between interpretable factors (Amount, Time)
@@ -163,11 +200,17 @@ def get_shap_explanation(transaction_id: str) -> Dict[str, Any]:
     # 1. Attempt Live API if configured
     if VERITY_ENV == "live":
         try:
-            resp = requests.get(f"{FRAUD_API_URL}/explain/{transaction_id}", headers=_FRAUD_AUTH_HEADERS, timeout=TOOL_TIMEOUT)
+            resp = requests.get(
+                f"{FRAUD_API_URL}/explain/{transaction_id}",
+                headers=_FRAUD_AUTH_HEADERS,
+                timeout=TOOL_TIMEOUT,
+            )
             if resp.status_code == 200:
                 return resp.json()
         except requests.exceptions.RequestException as e:
-            logger.info("Live fraud explain API unavailable, falling back to mock: %s", e)
+            logger.info(
+                "Live fraud explain API unavailable, falling back to mock: %s", e
+            )
 
     # 2. Mock Mode / Fallback Resolution
     explanations = _load_mock_file("mock_fraud_explanations.json") or []
@@ -184,32 +227,34 @@ def get_shap_explanation(transaction_id: str) -> Dict[str, Any]:
                 "feature": "Amount",
                 "human_label": "Transaction amount ($4,850.00)",
                 "contribution": 0.42,
-                "interpretable": True
+                "interpretable": True,
             },
             {
                 "feature": "Time",
                 "human_label": "Transaction time (03:22 AM)",
                 "contribution": 0.19,
-                "interpretable": True
+                "interpretable": True,
             },
             {
                 "feature": "V14",
                 "human_label": "Anonymized behavioral signal V14",
                 "contribution": 0.28,
-                "interpretable": False
+                "interpretable": False,
             },
             {
                 "feature": "V12",
                 "human_label": "Anonymized behavioral signal V12",
                 "contribution": 0.15,
-                "interpretable": False
-            }
+                "interpretable": False,
+            },
         ],
-        "model_version": "v1.0-benchmark-winner"
+        "model_version": "v1.0-benchmark-winner",
     }
 
 
-def walk_graph(account_id: str, tier: str = "real_ledger", depth: int = 2) -> Dict[str, Any]:
+def walk_graph(
+    account_id: str, tier: str = "real_ledger", depth: int = 2
+) -> dict[str, Any]:
     """
     Traverses transactions/nodes matching GraphWalkStep contract.
     - For tier == 'real_ledger': Returns single-account chronological transitions with balance metrics.
@@ -219,21 +264,25 @@ def walk_graph(account_id: str, tier: str = "real_ledger", depth: int = 2) -> Di
     if VERITY_ENV == "live":
         try:
             if tier == "real_ledger":
-                resp = requests.get(f"{LEDGER_API_URL}/walk/{account_id}", timeout=TOOL_TIMEOUT)
+                resp = requests.get(
+                    f"{LEDGER_API_URL}/walk/{account_id}",
+                    headers=_LEDGER_AUTH_HEADERS,
+                    timeout=TOOL_TIMEOUT,
+                )
             else:
-                resp = requests.get(f"{TYPOLOGY_API_URL}/walk/{account_id}?depth={depth}", timeout=TOOL_TIMEOUT)
+                resp = requests.get(
+                    f"{TYPOLOGY_API_URL}/walk/{account_id}?depth={depth}",
+                    headers=_TYPOLOGY_AUTH_HEADERS,
+                    timeout=TOOL_TIMEOUT,
+                )
             if resp.status_code == 200:
                 steps = resp.json()
-                return {
-                    "account_id": account_id,
-                    "tier": tier,
-                    "steps": steps
-                }
+                return {"account_id": account_id, "tier": tier, "steps": steps}
         except requests.exceptions.RequestException as e:
             logger.info("Live walk API unavailable, falling back to mock: %s", e)
 
     # 2. Mock Mode / Fallback Resolution
-    steps: List[Dict[str, Any]] = []
+    steps: list[dict[str, Any]] = []
 
     if tier == "real_ledger":
         timelines = _load_mock_file("mock_timelines.json") or []
@@ -245,53 +294,99 @@ def walk_graph(account_id: str, tier: str = "real_ledger", depth: int = 2) -> Di
 
         if not acct_txs:
             acct_txs = [
-                {"id": "TX-LEDGER-3001", "timestamp": "2026-09-14T10:00:00Z", "amount": 1200.0, "balance": 14200.0, "narration": "INWARD RTGS SUPPLIER"},
-                {"id": "TX-LEDGER-3005", "timestamp": "2026-09-15T11:30:00Z", "amount": 2500.0, "balance": 11700.0, "narration": "VENDOR PAYROLL"},
-                {"id": "TX-LEDGER-3011", "timestamp": "2026-09-16T14:15:00Z", "amount": 12500.0, "balance": -800.0, "narration": "BULK UNREGISTERED TXFR"},
-                {"id": "TX-LEDGER-3012", "timestamp": "2026-09-16T15:20:00Z", "amount": 2400.0, "balance": -3200.0, "narration": "URGENT OVERDRAFT TXFR"}
+                {
+                    "id": "TX-LEDGER-3001",
+                    "timestamp": "2026-09-14T10:00:00Z",
+                    "amount": 1200.0,
+                    "balance": 14200.0,
+                    "narration": "INWARD RTGS SUPPLIER",
+                },
+                {
+                    "id": "TX-LEDGER-3005",
+                    "timestamp": "2026-09-15T11:30:00Z",
+                    "amount": 2500.0,
+                    "balance": 11700.0,
+                    "narration": "VENDOR PAYROLL",
+                },
+                {
+                    "id": "TX-LEDGER-3011",
+                    "timestamp": "2026-09-16T14:15:00Z",
+                    "amount": 12500.0,
+                    "balance": -800.0,
+                    "narration": "BULK UNREGISTERED TXFR",
+                },
+                {
+                    "id": "TX-LEDGER-3012",
+                    "timestamp": "2026-09-16T15:20:00Z",
+                    "amount": 2400.0,
+                    "balance": -3200.0,
+                    "narration": "URGENT OVERDRAFT TXFR",
+                },
             ]
 
-        for idx, tx in enumerate(acct_txs[:max(1, depth * 2)]):
-            steps.append({
-                "step_index": idx + 1,
-                "from_account": account_id,
-                "to_account": account_id,
-                "tier": "real_ledger",
-                "amount": float(tx.get("amount", 0.0)),
-                "balance": float(tx.get("balance", 0.0)),
-                "timestamp": tx.get("timestamp", "2026-09-16T12:00:00Z"),
-                "narration": tx.get("narration"),
-                "tool_call_id": f"TOOL-WALK-{uuid.uuid4().hex[:6].upper()}"
-            })
+        for idx, tx in enumerate(acct_txs[: max(1, depth * 2)]):
+            steps.append(
+                {
+                    "step_index": idx + 1,
+                    "from_account": account_id,
+                    "to_account": account_id,
+                    "tier": "real_ledger",
+                    "amount": float(tx.get("amount", 0.0)),
+                    "balance": float(tx.get("balance", 0.0)),
+                    "timestamp": tx.get("timestamp", "2026-09-16T12:00:00Z"),
+                    "narration": tx.get("narration"),
+                    "tool_call_id": f"TOOL-WALK-{uuid.uuid4().hex[:6].upper()}",
+                }
+            )
 
     else:
         # Synthetic network multi-hop walk (Round-tripping loop)
         synthetic_hops = [
-            ("ACC-SYN-401", "ACC-SYN-402", 49000.0, "2026-09-18T06:00:00Z", "CONSULTING RETAINER FEE"),
-            ("ACC-SYN-402", "ACC-SYN-403", 48200.0, "2026-09-18T07:15:00Z", "SUB-CONTRACT ADVISORY"),
-            ("ACC-SYN-403", "ACC-SYN-401", 47500.0, "2026-09-18T10:30:00Z", "MANAGEMENT SETTLEMENT")
+            (
+                "ACC-SYN-401",
+                "ACC-SYN-402",
+                49000.0,
+                "2026-09-18T06:00:00Z",
+                "CONSULTING RETAINER FEE",
+            ),
+            (
+                "ACC-SYN-402",
+                "ACC-SYN-403",
+                48200.0,
+                "2026-09-18T07:15:00Z",
+                "SUB-CONTRACT ADVISORY",
+            ),
+            (
+                "ACC-SYN-403",
+                "ACC-SYN-401",
+                47500.0,
+                "2026-09-18T10:30:00Z",
+                "MANAGEMENT SETTLEMENT",
+            ),
         ]
 
-        for idx, (from_acc, to_acc, amt, ts, narr) in enumerate(synthetic_hops[:max(1, depth)]):
-            steps.append({
-                "step_index": idx + 1,
-                "from_account": from_acc,
-                "to_account": to_acc,
-                "tier": "synthetic_network",
-                "amount": amt,
-                "timestamp": ts,
-                "narration": narr,
-                "tool_call_id": f"TOOL-WALK-{uuid.uuid4().hex[:6].upper()}"
-            })
+        for idx, (from_acc, to_acc, amt, ts, narr) in enumerate(
+            synthetic_hops[: max(1, depth)]
+        ):
+            steps.append(
+                {
+                    "step_index": idx + 1,
+                    "from_account": from_acc,
+                    "to_account": to_acc,
+                    "tier": "synthetic_network",
+                    "amount": amt,
+                    "timestamp": ts,
+                    "narration": narr,
+                    "tool_call_id": f"TOOL-WALK-{uuid.uuid4().hex[:6].upper()}",
+                }
+            )
 
-    return {
-        "account_id": account_id,
-        "tier": tier,
-        "steps": steps
-    }
+    return {"account_id": account_id, "tier": tier, "steps": steps}
 
 
-def counterfactual(transaction_id: str, parameter_overrides: Dict[str, Any]) -> Dict[str, Any]:
+def counterfactual(
+    transaction_id: str, parameter_overrides: dict[str, Any]
+) -> dict[str, Any]:
     """
     Re-runs the calibrated mathematical model with modified parameters (e.g. amount or timestamp)
     and returns a fresh explanation/score rather than hallucinating or using hardcoded thresholds.
@@ -301,26 +396,42 @@ def counterfactual(transaction_id: str, parameter_overrides: Dict[str, Any]) -> 
         try:
             payload = {
                 "transaction_id": transaction_id,
-                "parameter_overrides": parameter_overrides
+                "parameter_overrides": parameter_overrides,
             }
-            resp = requests.post(f"{FRAUD_API_URL}/counterfactual", json=payload, headers=_FRAUD_AUTH_HEADERS, timeout=TOOL_TIMEOUT)
+            resp = requests.post(
+                f"{FRAUD_API_URL}/counterfactual",
+                json=payload,
+                headers=_FRAUD_AUTH_HEADERS,
+                timeout=TOOL_TIMEOUT,
+            )
             if resp.status_code == 200:
-                return resp.json()
+                result = resp.json()
+                result.setdefault("model_source", "production_lightgbm")
+                return result
         except requests.exceptions.RequestException as e:
-            logger.info("Live counterfactual API unavailable, falling back to model engine: %s", e)
+            logger.info(
+                "Live counterfactual API unavailable, falling back to model engine: %s",
+                e,
+            )
 
     # 2. True Model-Backed Recalculation via ModelEngine
     engine = get_model_engine()
     # Use baseline transaction feature vector for transaction_id
     base_features = dict(DEFAULT_TX_FEATURES)
-    
+
     # If transaction amount is known from get_transaction, update it
-    tx = get_transaction(transaction_id)
-    if "amount" in tx and tx["amount"] > 0:
-        base_features["Amount"] = float(tx["amount"])
+    try:
+        tx = get_transaction(transaction_id)
+        if "amount" in tx and tx["amount"] > 0:
+            base_features["Amount"] = float(tx["amount"])
+    except TransactionNotFoundError:
+        logger.info(
+            "Transaction %s not found; using default baseline features for counterfactual",
+            transaction_id,
+        )
 
     eval_result = engine.evaluate_counterfactual(base_features, parameter_overrides)
-    
+
     return {
         "transaction_id": transaction_id,
         "original_risk_score": eval_result["original_risk_score"],
@@ -328,6 +439,8 @@ def counterfactual(transaction_id: str, parameter_overrides: Dict[str, Any]) -> 
         "original_verdict": eval_result["original_verdict"],
         "recalculated_verdict": eval_result["recalculated_verdict"],
         "modifications": parameter_overrides,
+        "rejected_overrides": eval_result["rejected_overrides"],
         "feature_attribution_deltas": eval_result["feature_attribution_deltas"],
-        "explanation": eval_result["explanation"]
+        "model_source": eval_result["model_source"],
+        "explanation": eval_result["explanation"],
     }

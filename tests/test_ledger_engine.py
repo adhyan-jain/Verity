@@ -4,15 +4,24 @@ Person B: Tests narration parser, baseline computation, anomaly detection,
 visual timeline generation, and Ledger API endpoints.
 """
 
+import os
+
 import pytest
-import pandas as pd
 from fastapi.testclient import TestClient
 
-from engines.ledger.parse_narrations import parse_bank_ledger, extract_payment_rail, extract_counterparty, get_all_account_summaries
-from engines.ledger.reconcile import compute_account_baseline, compute_all_account_baselines
-from engines.ledger.anomalies import detect_all_ledger_anomalies, detect_balance_breaks, detect_timing_spikes, detect_reversal_outliers
-from engines.ledger.timeline import build_account_timeline
+os.environ.setdefault("LEDGER_API_KEY", "test-key")
+
+from engines.ledger.anomalies import detect_all_ledger_anomalies
 from engines.ledger.api import app
+from engines.ledger.parse_narrations import (
+    extract_payment_rail,
+    get_all_account_summaries,
+    parse_bank_ledger,
+)
+from engines.ledger.reconcile import compute_all_account_baselines
+from engines.ledger.timeline import build_account_timeline
+
+API_KEY_HEADERS = {"X-API-Key": os.environ["LEDGER_API_KEY"]}
 
 
 @pytest.fixture(scope="module")
@@ -22,7 +31,7 @@ def parsed_df():
 
 @pytest.fixture(scope="module")
 def client():
-    return TestClient(app)
+    return TestClient(app, headers=API_KEY_HEADERS)
 
 
 def test_payment_rail_classifier():
@@ -39,7 +48,17 @@ def test_payment_rail_classifier():
 def test_ledger_dataframe_integrity(parsed_df):
     assert len(parsed_df) == 116201
     assert parsed_df["account_id"].nunique() == 10
-    required_cols = ["id", "tier", "account_id", "timestamp", "amount", "direction", "balance", "raw_narration", "payment_rail"]
+    required_cols = [
+        "id",
+        "tier",
+        "account_id",
+        "timestamp",
+        "amount",
+        "direction",
+        "balance",
+        "raw_narration",
+        "payment_rail",
+    ]
     for col in required_cols:
         assert col in parsed_df.columns
     assert (parsed_df["amount"] >= 0).all()
@@ -60,7 +79,7 @@ def test_account_summaries(parsed_df):
 def test_account_baselines(parsed_df):
     baselines = compute_all_account_baselines(parsed_df)
     assert len(baselines) == 10
-    
+
     # Check baseline structure for account 1196428
     b = baselines["1196428"]
     assert b["velocity"]["mean_daily"] > 0
@@ -72,7 +91,7 @@ def test_account_baselines(parsed_df):
 def test_anomaly_detection_schemas(parsed_df):
     anomalies = detect_all_ledger_anomalies(parsed_df)
     assert len(anomalies) > 0
-    
+
     valid_types = {"balance_break", "timing_spike", "reversal_outlier"}
     for anom in anomalies:
         assert anom["anomaly_type"] in valid_types
@@ -89,7 +108,7 @@ def test_timeline_generation(parsed_df):
     assert len(timeline["density_curve"]) > 0
     assert len(timeline["transactions"]) > 0
     assert len(timeline["anomalies"]) > 0
-    
+
     # Verify density curve fields
     first_pt = timeline["density_curve"][0]
     assert "date" in first_pt

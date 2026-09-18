@@ -3,9 +3,13 @@ Unit tests for Agent Tool Quarantine Layer (agent/tools.py).
 Verifies strict data contracts compliance, dual-mode behavior, and model-backed counterfactual inference.
 """
 
-import pytest
-import agent.tools as tools
-from agent.tools import get_transaction, get_shap_explanation, walk_graph, counterfactual
+from agent import tools
+from agent.tools import (
+    counterfactual,
+    get_shap_explanation,
+    get_transaction,
+    walk_graph,
+)
 
 
 class _FakeResponse:
@@ -31,7 +35,20 @@ def test_live_mode_routes_get_transaction_by_id_prefix(monkeypatch):
         if "/ledger/transaction/" in url:
             return _FakeResponse(200, {"id": "TX-LEDGER-000001", "tier": "real_ledger"})
         if "/typology/network" in url:
-            return _FakeResponse(200, {"edges": [{"id": "TX-SYNTH-0020", "tier": "synthetic_network", "from_account": "ACC-A", "amount": 100.0, "timestamp": "2026-01-01T00:00:00Z"}]})
+            return _FakeResponse(
+                200,
+                {
+                    "edges": [
+                        {
+                            "id": "TX-SYNTH-0020",
+                            "tier": "synthetic_network",
+                            "from_account": "ACC-A",
+                            "amount": 100.0,
+                            "timestamp": "2026-01-01T00:00:00Z",
+                        }
+                    ]
+                },
+            )
         if "/fraud/transaction/" in url:
             return _FakeResponse(200, {"id": "TX-CARD-1", "tier": "real_card"})
         raise AssertionError(f"unexpected URL called: {url}")

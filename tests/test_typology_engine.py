@@ -4,13 +4,26 @@ Person B: Tests network generation, FATF typology detection algorithms,
 adversarial hold-out evaluation, and Typology API endpoints.
 """
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
-from data.synthetic.generate_network import generate_fatf_network
-from engines.typology.fatf_rules import build_networkx_graph, detect_structuring, detect_round_tripping, detect_rapid_layering
-from engines.typology.detect import detect_all_typologies, evaluate_adversarial_set, load_synthetic_network
+os.environ.setdefault("TYPOLOGY_API_KEY", "test-key")
+
 from engines.typology.api import app
+from engines.typology.detect import (
+    evaluate_adversarial_set,
+    load_synthetic_network,
+)
+from engines.typology.fatf_rules import (
+    build_networkx_graph,
+    detect_rapid_layering,
+    detect_round_tripping,
+    detect_structuring,
+)
+
+API_KEY_HEADERS = {"X-API-Key": os.environ["TYPOLOGY_API_KEY"]}
 
 
 @pytest.fixture(scope="module")
@@ -20,7 +33,7 @@ def network_data():
 
 @pytest.fixture(scope="module")
 def client():
-    return TestClient(app)
+    return TestClient(app, headers=API_KEY_HEADERS)
 
 
 def test_synthetic_network_structure(network_data):
@@ -28,12 +41,12 @@ def test_synthetic_network_structure(network_data):
     assert "edges" in network_data
     assert len(network_data["nodes"]) >= 20
     assert len(network_data["edges"]) >= 100
-    
+
     # Check node structure
     first_node = network_data["nodes"][0]
     assert "account_id" in first_node
     assert "risk_rating" in first_node
-    
+
     # Check edge structure
     first_edge = network_data["edges"][0]
     assert "from_account" in first_edge
@@ -47,7 +60,7 @@ def test_fatf_structuring_detector(network_data):
     G = build_networkx_graph(network_data["edges"])
     flags = detect_structuring(G)
     assert len(flags) >= 1
-    
+
     flag = flags[0]
     assert flag["typology"] == "structuring"
     assert "FATF" in flag["fatf_reference"]
@@ -60,7 +73,7 @@ def test_fatf_round_tripping_detector(network_data):
     G = build_networkx_graph(network_data["edges"])
     flags = detect_round_tripping(G)
     assert len(flags) >= 1
-    
+
     flag = flags[0]
     assert flag["typology"] == "round_tripping"
     assert "Beneficial Ownership" in flag["fatf_reference"]
@@ -72,7 +85,7 @@ def test_fatf_rapid_layering_detector(network_data):
     G = build_networkx_graph(network_data["edges"])
     flags = detect_rapid_layering(G)
     assert len(flags) >= 1
-    
+
     flag = flags[0]
     assert flag["typology"] == "rapid_layering"
     assert len(flag["involved_accounts"]) >= 4

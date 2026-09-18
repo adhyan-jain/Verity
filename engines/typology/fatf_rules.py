@@ -113,6 +113,12 @@ def detect_round_tripping(
     """
     flags: list[dict[str, Any]] = []
     seen_cycles = set()
+    # Defensive bound: this DFS has no memoization, so a denser real-world
+    # graph (unlike the small synthetic demo network) could blow up
+    # combinatorially. Cap total recursive calls per detection run instead
+    # of rewriting the algorithm.
+    max_recursive_calls = 50_000
+    call_count = [0]
 
     def dfs_cycle(
         start_node: str,
@@ -124,6 +130,9 @@ def detect_round_tripping(
         prev_time: Any,
         prev_amt: float,
     ):
+        call_count[0] += 1
+        if call_count[0] > max_recursive_calls:
+            return
         if len(path) > max_cycle_length:
             return
 
@@ -208,6 +217,10 @@ def detect_rapid_layering(
     Uses time-constrained DFS for high-performance execution.
     """
     flags: list[dict[str, Any]] = []
+    # Defensive bound, same rationale as detect_round_tripping's dfs_cycle:
+    # no memoization, so cap total recursive calls per detection run.
+    max_recursive_calls = 50_000
+    call_count = [0]
 
     def dfs_layer(
         curr_node: str,
@@ -216,6 +229,9 @@ def detect_rapid_layering(
         prev_time: Any,
         prev_amount: float,
     ):
+        call_count[0] += 1
+        if call_count[0] > max_recursive_calls:
+            return
         if len(current_edges) >= min_hops:
             path_key = tuple(current_path)
             already_flagged = any(

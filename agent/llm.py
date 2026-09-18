@@ -5,10 +5,11 @@ ZERO framework bloat (No LangChain, AutoGen, or CrewAI).
 Supports both live OpenAI/Gemini/Ollama endpoints and a built-in reasoning engine.
 """
 
-import os
 import json
 import logging
-from typing import Dict, Any, List, Optional
+import os
+from typing import Any
+
 import requests
 
 logger = logging.getLogger("verity.agent.llm")
@@ -59,9 +60,9 @@ class VerityLLMClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
     ):
         self.api_key = api_key or LLM_API_KEY
         self.base_url = (base_url or LLM_BASE_URL).rstrip("/")
@@ -72,10 +73,10 @@ class VerityLLMClient:
         case_id: str,
         primary_tx_id: str,
         tier_origin: str,
-        history: List[Dict[str, Any]],
+        history: list[dict[str, Any]],
         step_number: int,
         max_steps: int = 4,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Decides the next investigative action based on current evidence.
         Returns:
@@ -104,9 +105,9 @@ class VerityLLMClient:
         case_id: str,
         primary_tx_id: str,
         tier_origin: str,
-        history: List[Dict[str, Any]],
+        history: list[dict[str, Any]],
         step_number: int,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -157,10 +158,10 @@ class VerityLLMClient:
         case_id: str,
         primary_tx_id: str,
         tier_origin: str,
-        history: List[Dict[str, Any]],
+        history: list[dict[str, Any]],
         step_number: int,
         max_steps: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Deterministic, transparent reasoning based on observed evidence.
         """
@@ -244,7 +245,7 @@ class VerityLLMClient:
         }
 
     def generate_chat_answer(
-        self, query: str, case_id: Optional[str], trace_events: List[Dict[str, Any]]
+        self, query: str, case_id: str | None, trace_events: list[dict[str, Any]]
     ) -> str:
         """
         Generates conversational analyst responses grounded strictly in trace event evidence.

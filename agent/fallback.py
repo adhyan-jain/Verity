@@ -4,12 +4,14 @@ Person C: Handles slow query latency (>20s) with pre-cached high-quality answers
 explicitly notifying the user with a visible badge rather than failing or hallucinating silently.
 """
 
-import os
+import concurrent.futures
 import json
+import logging
+import os
 import re
 import time
-import logging
-from typing import Dict, Any, Optional, Callable
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger("verity.agent.fallback")
 
@@ -26,8 +28,8 @@ STANDARD_FALLBACK_NOTICE = "Using a prepared benchmark answer for this query."
 
 
 def get_cached_answer(
-    query: str, fixtures_path: Optional[str] = None
-) -> Optional[Dict[str, Any]]:
+    query: str, fixtures_path: str | None = None
+) -> dict[str, Any] | None:
     """
     Looks up pre-cached responses for key judge questions:
     - Q1: why was this flagged / explain alert
@@ -93,30 +95,44 @@ def get_cached_answer(
 
 
 def execute_with_latency_guard(
-    task_func: Callable[[], Dict[str, Any]], query: str, timeout_seconds: float = 20.0
-) -> Dict[str, Any]:
+    task_func: Callable[[], dict[str, Any]], query: str, timeout_seconds: float = 20.0
+) -> dict[str, Any]:
     """
-    Executes a task function while tracking execution time.
+    Executes a task function with a real preemptive wall-clock timeout.
     If the function takes longer than timeout_seconds or raises an exception,
     falls back to the pre-cached answer with explicit UI disclosure.
+
+    Runs task_func on a worker thread so a hanging call (e.g. a stalled LLM
+    request) can't block past timeout_seconds — the caller gets the fallback
+    at exactly the deadline instead of only after task_func eventually
+    returns on its own.
     """
     start_time = time.perf_counter()
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(task_func)
     try:
-        result = task_func()
-        elapsed = time.perf_counter() - start_time
-        if elapsed >= timeout_seconds:
-            cached = get_cached_answer(query)
-            if cached:
-                cached["latency_seconds"] = elapsed
-                cached["fallback_reason"] = (
-                    f"Execution exceeded latency limit of {timeout_seconds}s (took {elapsed:.1f}s)."
-                )
-                return cached
+        result = future.result(timeout=timeout_seconds)
         return result
+    except concurrent.futures.TimeoutError:
+        elapsed = time.perf_counter() - start_time
+        cached = get_cached_answer(query)
+        if cached:
+            cached["latency_seconds"] = elapsed
+            cached["fallback_reason"] = (
+                f"Execution exceeded latency limit of {timeout_seconds}s (took {elapsed:.1f}s)."
+            )
+            return cached
+        raise TimeoutError(
+            f"Execution exceeded latency limit of {timeout_seconds}s and no cached fallback was available."
+        ) from None
     except Exception as exc:
         logger.warning("Task execution failed (%s), attempting cached fallback", exc)
         cached = get_cached_answer(query)
         if cached:
-            cached["fallback_reason"] = f"Execution error: {str(exc)}"
+            cached["fallback_reason"] = f"Execution error: {exc!s}"
             return cached
         raise exc
+    finally:
+        # Don't block returning the fallback on a still-hanging worker
+        # thread; let it finish/die on its own in the background.
+        executor.shutdown(wait=False)

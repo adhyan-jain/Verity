@@ -6,18 +6,34 @@ Eliminates any hallucinated claims, entities, or offshore assertions at code lev
 """
 
 import re
-from typing import List, Dict, Any, Tuple, Optional, Set
+from typing import Any
 
 # Suspicious / speculative terminology that cannot appear without explicit evidence
 SPECULATIVE_PREDICATES = {
-    "offshore", "cayman", "swiss", "panama", "cyprus", "shell", "haven",
-    "cartel", "smuggling", "bribe", "extortion", "terrorist", "laundering ring",
-    "mule", "straw man", "front company", "unregistered transmitter",
-    "unauthorized access", "hacked", "stolen credentials"
+    "offshore",
+    "cayman",
+    "swiss",
+    "panama",
+    "cyprus",
+    "shell",
+    "haven",
+    "cartel",
+    "smuggling",
+    "bribe",
+    "extortion",
+    "terrorist",
+    "laundering ring",
+    "mule",
+    "straw man",
+    "front company",
+    "unregistered transmitter",
+    "unauthorized access",
+    "hacked",
+    "stolen credentials",
 }
 
 
-def _split_into_sentences(text: str) -> List[str]:
+def _split_into_sentences(text: str) -> list[str]:
     """
     Splits text into sentences while protecting decimals ($4,850.00),
     timestamps (03:22 AM), and common technical tokens.
@@ -26,31 +42,41 @@ def _split_into_sentences(text: str) -> List[str]:
         return []
 
     # Protect decimals in currency: $4,850.00 -> $4,850<DOT>00
-    cleaned = re.sub(r'(\$\d[\d,]*)\.(\d+)', r'\1<DOT>\2', text)
-    cleaned = re.sub(r'(\b\d+)\.(\d+)\b', r'\1<DOT>\2', cleaned)
+    cleaned = re.sub(r"(\$\d[\d,]*)\.(\d+)", r"\1<DOT>\2", text)
+    cleaned = re.sub(r"(\b\d+)\.(\d+)\b", r"\1<DOT>\2", cleaned)
     # Protect common abbreviations
-    cleaned = re.sub(r'\b(e\.g\.|i\.e\.|vs\.|approx\.|dr\.|mr\.)', lambda m: m.group(1).replace('.', '<DOT>'), cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"\b(e\.g\.|i\.e\.|vs\.|approx\.|dr\.|mr\.)",
+        lambda m: m.group(1).replace(".", "<DOT>"),
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     # Protect AM/PM
-    cleaned = re.sub(r'\b(A\.M\.|P\.M\.)', lambda m: m.group(1).replace('.', '<DOT>'), cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"\b(A\.M\.|P\.M\.)",
+        lambda m: m.group(1).replace(".", "<DOT>"),
+        cleaned,
+        flags=re.IGNORECASE,
+    )
 
     # Split on sentence terminals followed by whitespace
-    raw_sentences = re.split(r'(?<=[.!?])\s+', cleaned)
+    raw_sentences = re.split(r"(?<=[.!?])\s+", cleaned)
 
     sentences = []
     for s in raw_sentences:
-        restored = s.replace('<DOT>', '.').strip()
+        restored = s.replace("<DOT>", ".").strip()
         if restored:
             sentences.append(restored)
 
     return sentences
 
 
-def _extract_tokens(text: str) -> Set[str]:
+def _extract_tokens(text: str) -> set[str]:
     """Extracts alphanumeric tokens in lowercase."""
-    return set(re.findall(r'[a-zA-Z0-9_\-]+', text.lower()))
+    return set(re.findall(r"[a-zA-Z0-9_\-]+", text.lower()))
 
 
-def _extract_factual_entities(text: str) -> Dict[str, Set[str]]:
+def _extract_factual_entities(text: str) -> dict[str, set[str]]:
     """
     Extracts high-risk factual assertions:
     - identifiers: TX-..., ACC-..., EVT-...
@@ -59,24 +85,17 @@ def _extract_factual_entities(text: str) -> Dict[str, Set[str]]:
     - content words: nouns/adjectives/predicates
     """
     clean = text.lower()
-    ids = set(re.findall(r'\b(?:tx|acc|evt|case|flag)-[a-zA-Z0-9_\-]+\b', clean))
-    numbers = set(re.findall(r'\b\d+(?:,\d+)*(?:\.\d+)?\b', text))
-    times = set(re.findall(r'\b\d{1,2}:\d{2}(?:\s*[ap]m)?\b', clean))
+    ids = set(re.findall(r"\b(?:tx|acc|evt|case|flag)-[a-zA-Z0-9_\-]+\b", clean))
+    numbers = set(re.findall(r"\b\d+(?:,\d+)*(?:\.\d+)?\b", text))
+    times = set(re.findall(r"\b\d{1,2}:\d{2}(?:\s*[ap]m)?\b", clean))
     words = _extract_tokens(clean)
 
-    return {
-        "ids": ids,
-        "numbers": numbers,
-        "times": times,
-        "words": words
-    }
+    return {"ids": ids, "numbers": numbers, "times": times, "words": words}
 
 
 def is_sentence_strictly_grounded(
-    candidate: str,
-    approved_sentences: List[str],
-    trace_events: List[Dict[str, Any]]
-) -> Tuple[bool, Optional[str]]:
+    candidate: str, approved_sentences: list[str], trace_events: list[dict[str, Any]]
+) -> tuple[bool, str | None]:
     """
     Strict evidence-only grounding rule:
     1. Direct match with an approved narration_sentence -> PASS
@@ -89,10 +108,14 @@ def is_sentence_strictly_grounded(
     """
     cand_norm = candidate.strip().lower()
 
-    # Rule 1: Exact or direct normalized match with an approved narration sentence
+    # Rule 1: Exact normalized match with an approved narration sentence.
+    # (A loose substring check here previously let a short, unrelated
+    # sentence short-circuit as grounded whenever it happened to be a
+    # substring of an approved sentence or vice versa, bypassing every
+    # stricter fact check below.)
     for app in approved_sentences:
         app_norm = app.strip().lower()
-        if cand_norm == app_norm or cand_norm in app_norm or app_norm in cand_norm:
+        if cand_norm == app_norm:
             return True, None
 
     # Build the complete verified evidence corpus from all trace events
@@ -102,14 +125,17 @@ def is_sentence_strictly_grounded(
         evidence_text_parts.append(evt.get("tool_output_summary", ""))
         evidence_text_parts.append(str(evt.get("tool_input", {})))
         evidence_text_parts.append(evt.get("event_id", ""))
-    
+
     evidence_corpus = " ".join(evidence_text_parts)
     evidence_facts = _extract_factual_entities(evidence_corpus)
     cand_facts = _extract_factual_entities(candidate)
 
     # Check 1: Unsupported entity IDs
     for ident in cand_facts["ids"]:
-        if not any(ident in ev_id for ev_id in evidence_facts["ids"]) and ident not in evidence_corpus.lower():
+        if (
+            not any(ident in ev_id for ev_id in evidence_facts["ids"])
+            and ident not in evidence_corpus.lower()
+        ):
             return False, f"Unsupported entity ID: '{ident}'"
 
     # Check 2: Unsupported numbers or amounts
@@ -128,11 +154,46 @@ def is_sentence_strictly_grounded(
 
     # Check 4: Substantial factual containment (reject sentences introducing new facts)
     stopwords = {
-        "the", "a", "an", "is", "was", "were", "and", "or", "to", "for",
-        "in", "on", "at", "of", "by", "this", "that", "it", "with", "from",
-        "has", "have", "had", "been", "indicates", "detected", "retrieved",
-        "analysis", "found", "exceeded", "representing", "processed", "also",
-        "then", "furthermore", "which", "as", "into", "within", "exhibits"
+        "the",
+        "a",
+        "an",
+        "is",
+        "was",
+        "were",
+        "and",
+        "or",
+        "to",
+        "for",
+        "in",
+        "on",
+        "at",
+        "of",
+        "by",
+        "this",
+        "that",
+        "it",
+        "with",
+        "from",
+        "has",
+        "have",
+        "had",
+        "been",
+        "indicates",
+        "detected",
+        "retrieved",
+        "analysis",
+        "found",
+        "exceeded",
+        "representing",
+        "processed",
+        "also",
+        "then",
+        "furthermore",
+        "which",
+        "as",
+        "into",
+        "within",
+        "exhibits",
     }
     informative_cand_words = cand_words - stopwords
 
@@ -149,9 +210,8 @@ def is_sentence_strictly_grounded(
 
 
 def ground_narrative(
-    trace_events: List[Dict[str, Any]], 
-    raw_narrative: Optional[str] = None
-) -> Tuple[str, List[Dict[str, Any]]]:
+    trace_events: list[dict[str, Any]], raw_narrative: str | None = None
+) -> tuple[str, list[dict[str, Any]]]:
     """
     Grounding rule: The agent's narrative field can ONLY be assembled from
     sentences that pass strict evidence verification against AgentTraceEvents.
@@ -162,7 +222,9 @@ def ground_narrative(
     - Strips any sentence with unsupported claims.
     - If all candidate sentences fail, falls back to approved trace narration sentences.
     """
-    valid_events = [e for e in trace_events if e.get("event_id") and e.get("narration_sentence")]
+    valid_events = [
+        e for e in trace_events if e.get("event_id") and e.get("narration_sentence")
+    ]
     approved_sentences = [e["narration_sentence"].strip() for e in valid_events]
 
     if not raw_narrative or not raw_narrative.strip():
@@ -173,7 +235,9 @@ def ground_narrative(
     grounded_sentences = []
 
     for candidate in candidate_sentences:
-        is_grounded, _ = is_sentence_strictly_grounded(candidate, approved_sentences, valid_events)
+        is_grounded, _ = is_sentence_strictly_grounded(
+            candidate, approved_sentences, valid_events
+        )
         if is_grounded:
             grounded_sentences.append(candidate)
 
@@ -186,11 +250,15 @@ def ground_narrative(
     return grounded_narrative, valid_events
 
 
-def audit_grounding(trace_events: List[Dict[str, Any]], raw_narrative: str) -> Dict[str, Any]:
+def audit_grounding(
+    trace_events: list[dict[str, Any]], raw_narrative: str
+) -> dict[str, Any]:
     """
     Audit tool for verifying grounding filter behavior and tracking dropped sentences.
     """
-    valid_events = [e for e in trace_events if e.get("event_id") and e.get("narration_sentence")]
+    valid_events = [
+        e for e in trace_events if e.get("event_id") and e.get("narration_sentence")
+    ]
     approved_sentences = [e["narration_sentence"].strip() for e in valid_events]
     candidate_sentences = _split_into_sentences(raw_narrative)
 
@@ -199,7 +267,9 @@ def audit_grounding(trace_events: List[Dict[str, Any]], raw_narrative: str) -> D
     rejection_reasons = {}
 
     for candidate in candidate_sentences:
-        is_grounded, reason = is_sentence_strictly_grounded(candidate, approved_sentences, valid_events)
+        is_grounded, reason = is_sentence_strictly_grounded(
+            candidate, approved_sentences, valid_events
+        )
         if is_grounded:
             retained.append(candidate)
         else:
@@ -213,5 +283,7 @@ def audit_grounding(trace_events: List[Dict[str, Any]], raw_narrative: str) -> D
         "retained_sentences": retained,
         "pruned_sentences": pruned,
         "rejection_reasons": rejection_reasons,
-        "grounded_narrative": " ".join(retained) if retained else " ".join(approved_sentences)
+        "grounded_narrative": " ".join(retained)
+        if retained
+        else " ".join(approved_sentences),
     }

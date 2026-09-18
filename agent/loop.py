@@ -5,12 +5,19 @@ Dispatches model tool calls, appends AgentTraceEvents, analyzes engine evidence 
 and returns strictly grounded Case narratives.
 """
 
-from typing import Dict, Any, List, Optional, Callable, Tuple
-import uuid
 import datetime
-from .tools import get_transaction, get_shap_explanation, walk_graph, counterfactual
+import uuid
+from collections.abc import Callable
+from typing import Any
+
 from .grounding import ground_narrative
 from .llm import VerityLLMClient
+from .tools import (
+    TransactionNotFoundError,
+    get_shap_explanation,
+    get_transaction,
+    walk_graph,
+)
 
 
 def _generate_event_id() -> str:
@@ -23,7 +30,9 @@ def _get_utc_timestamp() -> str:
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _analyze_ledger_evidence(steps: List[Dict[str, Any]], account_id: str) -> Tuple[float, str, str]:
+def _analyze_ledger_evidence(
+    steps: list[dict[str, Any]], account_id: str
+) -> tuple[float, str, str]:
     """
     Analyzes returned ledger transaction sequence mathematically:
     - Running balance degradation / negative reserves
@@ -31,7 +40,11 @@ def _analyze_ledger_evidence(steps: List[Dict[str, Any]], account_id: str) -> Tu
     Returns: (risk_score, tool_summary, narration_sentence)
     """
     if not steps:
-        return 0.50, f"No transactions recorded for account {account_id}.", f"Account {account_id} has no active ledger activity."
+        return (
+            0.50,
+            f"No transactions recorded for account {account_id}.",
+            f"Account {account_id} has no active ledger activity.",
+        )
 
     balances = [s.get("balance", 0.0) for s in steps if "balance" in s]
     amounts = [s.get("amount", 0.0) for s in steps]
@@ -48,7 +61,9 @@ def _analyze_ledger_evidence(steps: List[Dict[str, Any]], account_id: str) -> Tu
 
     if has_negative_balance:
         calculated_risk += 0.40
-        reasons.append(f"balance plummeted into negative overdraft (${min_balance:,.2f})")
+        reasons.append(
+            f"balance plummeted into negative overdraft (${min_balance:,.2f})"
+        )
 
     if step_count >= 3:
         calculated_risk += 0.20
@@ -65,14 +80,14 @@ def _analyze_ledger_evidence(steps: List[Dict[str, Any]], account_id: str) -> Tu
         f"Ledger analysis for account {account_id}: evaluated {step_count} transactions. "
         f"Initial balance ${start_balance:,.2f}, lowest balance ${min_balance:,.2f}. Risk: {risk_score}."
     )
-    sentence = (
-        f"Account history analysis for {account_id} detected a severe anomaly: {reasons_desc}."
-    )
+    sentence = f"Account history analysis for {account_id} detected a severe anomaly: {reasons_desc}."
 
     return risk_score, summary, sentence
 
 
-def _analyze_synthetic_evidence(steps: List[Dict[str, Any]], account_id: str) -> Tuple[float, str, str]:
+def _analyze_synthetic_evidence(
+    steps: list[dict[str, Any]], account_id: str
+) -> tuple[float, str, str]:
     """
     Analyzes synthetic network graph walk:
     - Tests for cycle preservation (start_node == end_node)
@@ -80,14 +95,18 @@ def _analyze_synthetic_evidence(steps: List[Dict[str, Any]], account_id: str) ->
     Returns: (risk_score, tool_summary, narration_sentence)
     """
     if not steps:
-        return 0.50, f"No graph steps found for {account_id}.", f"Graph traversal returned no connected entities for {account_id}."
+        return (
+            0.50,
+            f"No graph steps found for {account_id}.",
+            f"Graph traversal returned no connected entities for {account_id}.",
+        )
 
     start_node = steps[0].get("from_account")
     end_node = steps[-1].get("to_account")
     initial_amount = steps[0].get("amount", 1.0)
     final_amount = steps[-1].get("amount", 0.0)
 
-    is_cycle = (start_node == end_node)
+    is_cycle = start_node == end_node
     retention_ratio = (final_amount / initial_amount) if initial_amount > 0 else 0.0
     retention_pct = round(retention_ratio * 100, 1)
     hop_count = len(steps)
@@ -110,20 +129,22 @@ def _analyze_synthetic_evidence(steps: List[Dict[str, Any]], account_id: str) ->
         sentence = f"Graph traversal identified a high-velocity pass-through layering path across {hop_count} accounts."
     else:
         risk_score = 0.60
-        summary = f"Graph traversal traced {hop_count} steps without confirmed FATF cycle."
+        summary = (
+            f"Graph traversal traced {hop_count} steps without confirmed FATF cycle."
+        )
         sentence = f"Graph traversal mapped {hop_count} intermediate account hops."
 
     return risk_score, summary, sentence
 
 
 def run_investigation_loop(
-    case_id: str, 
-    primary_transaction_id: str, 
+    case_id: str,
+    primary_transaction_id: str,
     tier_origin: str = "real_card",
-    on_step_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
-    llm_client: Optional[VerityLLMClient] = None,
-    max_steps: int = 4
-) -> Dict[str, Any]:
+    on_step_callback: Callable[[dict[str, Any]], None] | None = None,
+    llm_client: VerityLLMClient | None = None,
+    max_steps: int = 4,
+) -> dict[str, Any]:
     """
     Executes investigative loop with an actual LLM decision engine:
     1. Loop: LLM decides tool to call -> executes tool -> emits AgentTraceEvent -> feeds observation back
@@ -133,7 +154,7 @@ def run_investigation_loop(
     5. Returns finalized Case object
     """
     client = llm_client or VerityLLMClient()
-    trace_events: List[Dict[str, Any]] = []
+    trace_events: list[dict[str, Any]] = []
     case_risk_score = 0.85
     actual_tier = tier_origin
 
@@ -145,7 +166,7 @@ def run_investigation_loop(
             tier_origin=actual_tier,
             history=trace_events,
             step_number=step_num,
-            max_steps=max_steps
+            max_steps=max_steps,
         )
 
         action = decision.get("action", "finish")
@@ -157,7 +178,23 @@ def run_investigation_loop(
         # 2. Execute selected tool
         if action == "get_transaction":
             tx_id = action_input.get("transaction_id", primary_transaction_id)
-            tx_data = get_transaction(tx_id)
+            try:
+                tx_data = get_transaction(tx_id)
+            except TransactionNotFoundError:
+                evt = {
+                    "event_id": _generate_event_id(),
+                    "case_id": case_id,
+                    "timestamp": _get_utc_timestamp(),
+                    "tool_called": "get_transaction",
+                    "tool_input": action_input,
+                    "tool_output_summary": f"Transaction {tx_id} not found.",
+                    "narration_sentence": f"Transaction {tx_id} could not be located in any engine or fixture.",
+                    "raw_output": {"error": "not_found", "transaction_id": tx_id},
+                }
+                trace_events.append(evt)
+                if on_step_callback:
+                    on_step_callback(evt)
+                break
             actual_tier = tx_data.get("tier", actual_tier)
             amount_str = f"${tx_data.get('amount', 0.0):,.2f}"
 
@@ -172,7 +209,7 @@ def run_investigation_loop(
                 "tool_input": action_input,
                 "tool_output_summary": summary,
                 "narration_sentence": sentence,
-                "raw_output": tx_data
+                "raw_output": tx_data,
             }
             trace_events.append(evt)
             if on_step_callback:
@@ -184,8 +221,16 @@ def run_investigation_loop(
             case_risk_score = float(shap_data.get("risk_score", 0.89))
             top_factors = shap_data.get("top_factors", [])
 
-            interp = [f"{f['feature']} ({f['contribution']:+.2f})" for f in top_factors if f.get("interpretable")]
-            anon = [f"{f['feature']} ({f['contribution']:+.2f})" for f in top_factors if not f.get("interpretable")]
+            interp = [
+                f"{f['feature']} ({f['contribution']:+.2f})"
+                for f in top_factors
+                if f.get("interpretable")
+            ]
+            anon = [
+                f"{f['feature']} ({f['contribution']:+.2f})"
+                for f in top_factors
+                if not f.get("interpretable")
+            ]
 
             interp_str = ", ".join(interp) or "Amount"
             anon_str = ", ".join(anon) or "V14"
@@ -201,7 +246,7 @@ def run_investigation_loop(
                 "tool_input": action_input,
                 "tool_output_summary": summary,
                 "narration_sentence": sentence,
-                "raw_output": shap_data
+                "raw_output": shap_data,
             }
             trace_events.append(evt)
             if on_step_callback:
@@ -230,7 +275,7 @@ def run_investigation_loop(
                 "tool_input": action_input,
                 "tool_output_summary": summary,
                 "narration_sentence": sentence,
-                "raw_output": walk_data
+                "raw_output": walk_data,
             }
             trace_events.append(evt)
             if on_step_callback:
@@ -243,12 +288,14 @@ def run_investigation_loop(
         tier_origin=actual_tier,
         history=trace_events,
         step_number=len(trace_events) + 1,
-        max_steps=max_steps
+        max_steps=max_steps,
     )
     candidate_narrative = final_decision.get("candidate_narrative")
 
     # 4. Strict Code-Level Grounding Filter
-    grounded_narrative, verified_events = ground_narrative(trace_events, raw_narrative=candidate_narrative)
+    grounded_narrative, verified_events = ground_narrative(
+        trace_events, raw_narrative=candidate_narrative
+    )
 
     # Clean trace events to remove internal raw_output before serializing
     clean_events = [
@@ -259,7 +306,7 @@ def run_investigation_loop(
             "tool_called": e["tool_called"],
             "tool_input": e["tool_input"],
             "tool_output_summary": e["tool_output_summary"],
-            "narration_sentence": e["narration_sentence"]
+            "narration_sentence": e["narration_sentence"],
         }
         for e in verified_events
     ]
@@ -271,5 +318,5 @@ def run_investigation_loop(
         "primary_transaction_id": primary_transaction_id,
         "risk_score": case_risk_score,
         "trace_events": clean_events,
-        "narrative": grounded_narrative
+        "narrative": grounded_narrative,
     }

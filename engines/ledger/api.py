@@ -5,11 +5,12 @@ and GraphWalkStep trajectories for the real ledger tier.
 """
 
 import json
+import logging
 import os
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 try:
@@ -36,17 +37,41 @@ except (ImportError, ValueError):
     from reconcile import compute_account_baseline
     from timeline import TIMELINE_CACHE_FILE, build_account_timeline
 
+logger = logging.getLogger("engines.ledger.api")
+
+LEDGER_API_KEY = os.environ.get("LEDGER_API_KEY")
+_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("LEDGER_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """
+    Validates the X-API-Key header against LEDGER_API_KEY.
+    Fails closed (503) if LEDGER_API_KEY is unset, matching the fraud engine's
+    require_api_key pattern (engines/fraud/api.py).
+    """
+    if not LEDGER_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Service misconfigured: LEDGER_API_KEY is not set.",
+        )
+    if x_api_key != LEDGER_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+
+
 app = FastAPI(
     title="Verity Ledger Engine API",
     description="Real Ledger Account Reconciliation, Anomaly Detection & Timeline Service",
     version="1.0.0",
 )
 
-# Enable CORS for local dev dashboard
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=bool(_ALLOWED_ORIGINS),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -82,7 +107,7 @@ def health_check() -> dict[str, str]:
     return {"status": "healthy", "service": "ledger-engine", "tier": "real_ledger"}
 
 
-@app.get("/api/v1/ledger/accounts")
+@app.get("/api/v1/ledger/accounts", dependencies=[Depends(require_api_key)])
 def list_accounts() -> list[dict[str, Any]]:
     """
     Returns summaries and high-level metrics for all 10 real bank ledger accounts.
@@ -91,16 +116,22 @@ def list_accounts() -> list[dict[str, Any]]:
     return get_all_account_summaries(df)
 
 
-@app.get("/api/v1/ledger/anomalies")
-def get_all_anomalies() -> list[dict[str, Any]]:
+@app.get("/api/v1/ledger/anomalies", dependencies=[Depends(require_api_key)])
+def get_all_anomalies(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict[str, Any]]:
     """
-    Returns all detected ReconciliationAnomaly records across all accounts.
+    Returns detected ReconciliationAnomaly records across all accounts, paginated.
     """
     df = get_df()
-    return detect_all_ledger_anomalies(df)
+    anomalies = detect_all_ledger_anomalies(df)
+    return anomalies[offset : offset + limit]
 
 
-@app.get("/api/v1/ledger/anomalies/{account_id}")
+@app.get(
+    "/api/v1/ledger/anomalies/{account_id}", dependencies=[Depends(require_api_key)]
+)
 def get_account_anomalies(account_id: str) -> list[dict[str, Any]]:
     """
     Returns ReconciliationAnomaly records for a specific account.
@@ -121,7 +152,9 @@ def get_account_anomalies(account_id: str) -> list[dict[str, Any]]:
     return anomalies
 
 
-@app.get("/api/v1/ledger/timeline/{account_id}")
+@app.get(
+    "/api/v1/ledger/timeline/{account_id}", dependencies=[Depends(require_api_key)]
+)
 def get_timeline(account_id: str) -> dict[str, Any]:
     """
     Returns full visual timeline data for account_id (density curve, anomaly windows, transactions).
@@ -140,7 +173,7 @@ def get_timeline(account_id: str) -> dict[str, Any]:
     return build_account_timeline(clean_acc, df)
 
 
-@app.get("/api/v1/ledger/walk/{account_id}")
+@app.get("/api/v1/ledger/walk/{account_id}", dependencies=[Depends(require_api_key)])
 def walk_ledger_graph(
     account_id: str, limit: int = Query(default=20, ge=1, le=100)
 ) -> list[dict[str, Any]]:
@@ -180,7 +213,10 @@ def walk_ledger_graph(
     return steps
 
 
-@app.get("/api/v1/ledger/transaction/{transaction_id}")
+@app.get(
+    "/api/v1/ledger/transaction/{transaction_id}",
+    dependencies=[Depends(require_api_key)],
+)
 def get_transaction(transaction_id: str) -> dict[str, Any]:
     """
     Returns TransactionRecord schema for a single ledger transaction.

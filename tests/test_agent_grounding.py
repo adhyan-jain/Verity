@@ -4,8 +4,12 @@ Tests code-level hallucination purging, rejection of unsupported speculative cla
 and preservation of strictly grounded factual statements.
 """
 
-import pytest
-from agent.grounding import ground_narrative, audit_grounding, is_sentence_strictly_grounded, _split_into_sentences
+from agent.grounding import (
+    _split_into_sentences,
+    audit_grounding,
+    ground_narrative,
+    is_sentence_strictly_grounded,
+)
 
 
 def test_split_into_sentences_preserves_currency_and_decimals():
@@ -29,15 +33,15 @@ def test_critique_offshore_hallucination_rejected():
             "event_id": "EVT-101",
             "narration_sentence": "Transaction TX-100 had amount 4850 and occurred at 03:22.",
             "tool_output_summary": "TX-100 4850",
-            "tool_input": {"transaction_id": "TX-100"}
+            "tool_input": {"transaction_id": "TX-100"},
         }
     ]
 
-    candidate = "Transaction TX-100 had amount 4850 and was transferred to an offshore account."
+    candidate = (
+        "Transaction TX-100 had amount 4850 and was transferred to an offshore account."
+    )
     is_grounded, reason = is_sentence_strictly_grounded(
-        candidate,
-        [e["narration_sentence"] for e in trace_events],
-        trace_events
+        candidate, [e["narration_sentence"] for e in trace_events], trace_events
     )
 
     assert is_grounded is False
@@ -50,16 +54,14 @@ def test_unsupported_entity_id_rejected():
             "event_id": "EVT-201",
             "narration_sentence": "Account history analysis for ACC-1092 detected a velocity spike.",
             "tool_output_summary": "ACC-1092 4 transactions",
-            "tool_input": {"account_id": "ACC-1092"}
+            "tool_input": {"account_id": "ACC-1092"},
         }
     ]
 
     # ACC-9999 does not exist in trace events
     candidate = "Funds were subsequently transferred to ACC-9999 without authorization."
     is_grounded, reason = is_sentence_strictly_grounded(
-        candidate,
-        [e["narration_sentence"] for e in trace_events],
-        trace_events
+        candidate, [e["narration_sentence"] for e in trace_events], trace_events
     )
 
     assert is_grounded is False
@@ -72,16 +74,14 @@ def test_unsupported_numeric_amount_rejected():
             "event_id": "EVT-101",
             "narration_sentence": "Retrieved transaction TX-CARD-9842 for $4,850.00 at 03:22 AM.",
             "tool_output_summary": "TX-CARD-9842 amount 4850.00",
-            "tool_input": {"transaction_id": "TX-CARD-9842"}
+            "tool_input": {"transaction_id": "TX-CARD-9842"},
         }
     ]
 
     # $99,000.00 is an unbacked fabricated figure
     candidate = "Retrieved transaction TX-CARD-9842 for $99,000.00 at 03:22 AM."
     is_grounded, reason = is_sentence_strictly_grounded(
-        candidate,
-        [e["narration_sentence"] for e in trace_events],
-        trace_events
+        candidate, [e["narration_sentence"] for e in trace_events], trace_events
     )
 
     assert is_grounded is False
@@ -93,13 +93,13 @@ def test_deterministic_assembly_and_clean_audit():
         {
             "event_id": "EVT-101",
             "narration_sentence": "Retrieved transaction TX-CARD-9842 for $4,850.00 at 03:22 AM.",
-            "tool_output_summary": "TX-CARD-9842 retrieved."
+            "tool_output_summary": "TX-CARD-9842 retrieved.",
         },
         {
             "event_id": "EVT-102",
             "narration_sentence": "SHAP feature attribution indicates elevated risk driven by Amount (+0.42).",
-            "tool_output_summary": "SHAP risk score 0.89."
-        }
+            "tool_output_summary": "SHAP risk score 0.89.",
+        },
     ]
 
     narrative, verified_events = ground_narrative(trace_events)
@@ -114,7 +114,7 @@ def test_audit_grounding_separates_retained_and_pruned():
             "event_id": "EVT-101",
             "narration_sentence": "Retrieved transaction TX-CARD-9842 for $4,850.00 at 03:22 AM.",
             "tool_output_summary": "TX-CARD-9842 retrieved.",
-            "tool_input": {"transaction_id": "TX-CARD-9842"}
+            "tool_input": {"transaction_id": "TX-CARD-9842"},
         }
     ]
 

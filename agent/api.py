@@ -5,38 +5,68 @@ model-backed counterfactuals, and grounded conversational AI chat.
 Runs on Port 8000.
 """
 
-import json
 import asyncio
+import json
+import os
 import time
-from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from typing import Any
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from .case_cache import BoundedCaseCache
+from .fallback import (
+    execute_with_latency_guard,
+    get_cached_answer,
+)
+from .grounding import ground_narrative
+from .llm import VerityLLMClient
 from .loop import run_investigation_loop
 from .tools import counterfactual as run_counterfactual
-from .fallback import get_cached_answer, execute_with_latency_guard, STANDARD_FALLBACK_NOTICE
-from .llm import VerityLLMClient
-from .grounding import ground_narrative
+
+AGENT_API_KEY = os.environ.get("AGENT_API_KEY")
+_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("AGENT_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """
+    Validates the X-API-Key header against AGENT_API_KEY.
+    Fails closed (503) if AGENT_API_KEY is unset, matching the fraud engine's
+    require_api_key pattern (engines/fraud/api.py).
+    """
+    if not AGENT_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Service misconfigured: AGENT_API_KEY is not set.",
+        )
+    if x_api_key != AGENT_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+
 
 app = FastAPI(
     title="Verity Agent Core Service",
     version="2.0.0",
-    description="Dynamic LLM tool-calling agent, live trace streaming, and model-backed counterfactual engine"
+    description="Dynamic LLM tool-calling agent, live trace streaming, and model-backed counterfactual engine",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=bool(_ALLOWED_ORIGINS),
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Active investigation sessions and event streams
-CASE_CACHE: Dict[str, Dict[str, Any]] = {}
-EVENT_QUEUES: Dict[str, List[Dict[str, Any]]] = {}
+# Active investigation sessions and event streams. Bounded LRU (max 500
+# cases) so a stream of distinct case_ids can't grow these without limit.
+CASE_CACHE: BoundedCaseCache = BoundedCaseCache(max_size=500)
+EVENT_QUEUES: BoundedCaseCache = BoundedCaseCache(max_size=500)
 llm_client = VerityLLMClient()
 
 
@@ -45,20 +75,32 @@ llm_client = VerityLLMClient()
 # -------------------------------------------------------------
 class InvestigateRequest(BaseModel):
     case_id: str = Field(..., description="Unique case identifier")
-    transaction_id: str = Field(..., description="Primary transaction ID to investigate")
-    tier_origin: str = Field(default="real_card", description="Tier origin: real_card, real_ledger, synthetic_network")
-    simulate_latency: Optional[float] = Field(default=0.0, description="Optional latency injection for testing fallback watchdog")
+    transaction_id: str = Field(
+        ..., description="Primary transaction ID to investigate"
+    )
+    tier_origin: str = Field(
+        default="real_card",
+        description="Tier origin: real_card, real_ledger, synthetic_network",
+    )
+    simulate_latency: float | None = Field(
+        default=0.0,
+        description="Optional latency injection for testing fallback watchdog",
+    )
 
 
 class CounterfactualRequest(BaseModel):
     transaction_id: str = Field(..., description="Transaction ID to modify")
-    parameter_overrides: Dict[str, Any] = Field(..., description="Dictionary of parameters to override (e.g. Amount)")
+    parameter_overrides: dict[str, Any] = Field(
+        ..., description="Dictionary of parameters to override (e.g. Amount)"
+    )
 
 
 class ChatRequest(BaseModel):
-    case_id: Optional[str] = Field(default=None, description="Active case context ID")
+    case_id: str | None = Field(default=None, description="Active case context ID")
     query: str = Field(..., description="Natural language question from analyst")
-    simulate_latency: Optional[float] = Field(default=0.0, description="Simulated execution latency in seconds")
+    simulate_latency: float | None = Field(
+        default=0.0, description="Simulated execution latency in seconds"
+    )
 
 
 # -------------------------------------------------------------
@@ -67,20 +109,26 @@ class ChatRequest(BaseModel):
 @app.get("/health")
 def healthcheck():
     """Health check probe."""
-    return {"status": "healthy", "service": "verity-agent-core", "port": 8000, "version": "2.0.0"}
+    return {
+        "status": "healthy",
+        "service": "verity-agent-core",
+        "port": 8000,
+        "version": "2.0.0",
+    }
 
 
-@app.post("/api/v1/agent/investigate")
-def investigate_case(req: InvestigateRequest) -> Dict[str, Any]:
+@app.post("/api/v1/agent/investigate", dependencies=[Depends(require_api_key)])
+def investigate_case(req: InvestigateRequest) -> dict[str, Any]:
     """
     Triggers dynamic LLM investigation loop for a flagged case.
     Wraps execution with the latency guard watchdog.
     """
+
     def _run():
         if req.simulate_latency and req.simulate_latency > 0:
             time.sleep(req.simulate_latency)
 
-        def _step_callback(event: Dict[str, Any]):
+        def _step_callback(event: dict[str, Any]):
             if req.case_id not in EVENT_QUEUES:
                 EVENT_QUEUES[req.case_id] = []
             EVENT_QUEUES[req.case_id].append(event)
@@ -90,30 +138,43 @@ def investigate_case(req: InvestigateRequest) -> Dict[str, Any]:
             primary_transaction_id=req.transaction_id,
             tier_origin=req.tier_origin,
             on_step_callback=_step_callback,
-            llm_client=llm_client
+            llm_client=llm_client,
         )
         CASE_CACHE[req.case_id] = case_data
         return case_data
 
     # Wrap with 20-second latency guard watchdog
     result = execute_with_latency_guard(
-        task_func=_run,
-        query="why was this flagged",
-        timeout_seconds=20.0
+        task_func=_run, query="why was this flagged", timeout_seconds=20.0
     )
     return result
 
 
-@app.get("/api/v1/agent/trace-stream/{case_id}")
+@app.get(
+    "/api/v1/agent/trace-stream/{case_id}", dependencies=[Depends(require_api_key)]
+)
 async def get_trace_stream(case_id: str, request: Request, stream: bool = False):
     """
     Live trace streaming endpoint:
     - If stream=True or Accept: text/event-stream: streams Server-Sent Events live.
     - Otherwise returns JSON array of AgentTraceEvents.
+
+    Requires the case to already exist (created via POST /investigate first).
+    Previously this silently ran a brand-new investigation (with a
+    hardcoded default transaction) for any unrecognized case_id, which let
+    an unauthenticated caller trigger arbitrary LLM inference and unbounded
+    cache growth just by polling GET with a fresh ID.
     """
+    if case_id not in CASE_CACHE and case_id not in EVENT_QUEUES:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Case {case_id} not found. Call POST /api/v1/agent/investigate first.",
+        )
+
     accept_header = request.headers.get("accept", "")
 
     if stream or "text/event-stream" in accept_header:
+
         async def event_generator():
             # If case already has events, yield them
             events = EVENT_QUEUES.get(case_id, [])
@@ -124,7 +185,7 @@ async def get_trace_stream(case_id: str, request: Request, stream: bool = False)
                 yield f"data: {json.dumps(evt)}\n\n"
                 await asyncio.sleep(0.05)
 
-            yield "data: {\"stream_status\": \"completed\"}\n\n"
+            yield 'data: {"stream_status": "completed"}\n\n'
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -132,34 +193,22 @@ async def get_trace_stream(case_id: str, request: Request, stream: bool = False)
     if case_id in CASE_CACHE:
         return CASE_CACHE[case_id].get("trace_events", [])
 
-    if case_id in EVENT_QUEUES:
-        return EVENT_QUEUES[case_id]
-
-    # Run default investigation if not yet executed in session
-    case_data = run_investigation_loop(
-        case_id=case_id,
-        primary_transaction_id="TX-CARD-9842",
-        tier_origin="real_card",
-        llm_client=llm_client
-    )
-    CASE_CACHE[case_id] = case_data
-    return case_data.get("trace_events", [])
+    return EVENT_QUEUES[case_id]
 
 
-@app.post("/api/v1/agent/counterfactual")
-def execute_counterfactual(req: CounterfactualRequest) -> Dict[str, Any]:
+@app.post("/api/v1/agent/counterfactual", dependencies=[Depends(require_api_key)])
+def execute_counterfactual(req: CounterfactualRequest) -> dict[str, Any]:
     """
     Executes true model-backed counterfactual evaluation.
     Re-runs model inference with modified feature vector.
     """
     return run_counterfactual(
-        transaction_id=req.transaction_id,
-        parameter_overrides=req.parameter_overrides
+        transaction_id=req.transaction_id, parameter_overrides=req.parameter_overrides
     )
 
 
-@app.post("/api/v1/agent/chat")
-def handle_analyst_chat(req: ChatRequest) -> Dict[str, Any]:
+@app.post("/api/v1/agent/chat", dependencies=[Depends(require_api_key)])
+def handle_analyst_chat(req: ChatRequest) -> dict[str, Any]:
     """
     Interactive conversational analyst console.
     Protected by latency guard:
@@ -167,6 +216,7 @@ def handle_analyst_chat(req: ChatRequest) -> Dict[str, Any]:
     2. If not matched, runs conversational LLM reasoning over case evidence.
     3. Runs candidate answer through code-level grounding filter.
     """
+
     def _chat_work():
         if req.simulate_latency and req.simulate_latency > 0:
             time.sleep(req.simulate_latency)
@@ -181,7 +231,9 @@ def handle_analyst_chat(req: ChatRequest) -> Dict[str, Any]:
         trace_events = case_context.get("trace_events", [])
 
         # 3. Generate conversational reasoning via LLM client
-        raw_response = llm_client.generate_chat_answer(req.query, req.case_id, trace_events)
+        raw_response = llm_client.generate_chat_answer(
+            req.query, req.case_id, trace_events
+        )
 
         # 4. Strict evidence-only grounding verification
         grounded_resp, _ = ground_narrative(trace_events, raw_narrative=raw_response)
@@ -190,12 +242,10 @@ def handle_analyst_chat(req: ChatRequest) -> Dict[str, Any]:
             "response": grounded_resp or raw_response,
             "is_fallback": False,
             "fallback_notice": None,
-            "risk_score": case_context.get("risk_score")
+            "risk_score": case_context.get("risk_score"),
         }
 
     # Wrap in 20.0s latency watchdog
     return execute_with_latency_guard(
-        task_func=_chat_work,
-        query=req.query,
-        timeout_seconds=20.0
+        task_func=_chat_work, query=req.query, timeout_seconds=20.0
     )

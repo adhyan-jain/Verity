@@ -3,16 +3,15 @@ Unit tests for Dynamic Tool Calling Loop with LLM Reasoning (agent/loop.py).
 Verifies LLM tool selection, multi-tier evidence analysis, and Case schema integrity.
 """
 
-import pytest
-from agent.loop import run_investigation_loop
 from agent.llm import VerityLLMClient
+from agent.loop import run_investigation_loop
 
 
 def test_investigation_loop_card_fraud():
     case = run_investigation_loop(
         case_id="CASE-CARD-001",
         primary_transaction_id="TX-CARD-9842",
-        tier_origin="real_card"
+        tier_origin="real_card",
     )
 
     assert case["case_id"] == "CASE-CARD-001"
@@ -36,7 +35,7 @@ def test_investigation_loop_ledger_dynamically_calculates_balance_break():
     case = run_investigation_loop(
         case_id="CASE-LEDGER-002",
         primary_transaction_id="TX-LEDGER-3011",
-        tier_origin="real_ledger"
+        tier_origin="real_ledger",
     )
 
     assert case["case_id"] == "CASE-LEDGER-002"
@@ -55,7 +54,7 @@ def test_investigation_loop_synthetic_dynamically_calculates_volume_retention():
     case = run_investigation_loop(
         case_id="CASE-SYNTH-003",
         primary_transaction_id="TX-SYNTH-5501",
-        tier_origin="synthetic_network"
+        tier_origin="synthetic_network",
     )
 
     assert case["case_id"] == "CASE-SYNTH-003"
@@ -75,11 +74,11 @@ def test_investigation_loop_streaming_callback():
     def on_step(event):
         streamed_events.append(event)
 
-    case = run_investigation_loop(
+    run_investigation_loop(
         case_id="CASE-STREAM-004",
         primary_transaction_id="TX-CARD-9842",
         tier_origin="real_card",
-        on_step_callback=on_step
+        on_step_callback=on_step,
     )
 
     assert len(streamed_events) == 2
@@ -95,9 +94,11 @@ def test_llm_decision_step():
     assert "TX-1" in str(decision1["action_input"])
 
     # Test step 2: after get_transaction, card tier must choose get_shap_explanation
-    mock_history = [{
-        "tool_called": "get_transaction",
-        "raw_output": {"tier": "real_card", "id": "TX-1"}
-    }]
+    mock_history = [
+        {
+            "tool_called": "get_transaction",
+            "raw_output": {"tier": "real_card", "id": "TX-1"},
+        }
+    ]
     decision2 = client.decide_next_step("C-1", "TX-1", "real_card", mock_history, 2)
     assert decision2["action"] == "get_shap_explanation"

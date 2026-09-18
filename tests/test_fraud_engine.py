@@ -7,8 +7,8 @@ from jsonschema import validate
 
 os.environ.setdefault("FRAUD_API_KEY", "test-key")
 
-from engines.fraud.api import app  # noqa: E402
-from engines.fraud.explain import explain_transaction  # noqa: E402
+from engines.fraud.api import app
+from engines.fraud.explain import explain_transaction
 
 API_KEY_HEADERS = {"X-API-Key": os.environ["FRAUD_API_KEY"]}
 
