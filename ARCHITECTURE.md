@@ -1,9 +1,10 @@
 # Verity — Integration Architecture & Gap Report
 
-Written during the integration pass (`integration/wiring` branch). This documents the
-system as it actually exists after three parallel builders (fraud engine / ledger+typology
-engine / agent core) plus a fourth, separately-generated Lovable UI export, and lists every
-gap found before any wiring changes are made. Big changes wait for sign-off on this doc.
+Written during the integration pass (`integration/wiring` branch). Sections 1–3 are the
+as-found survey from before any changes (kept for the record — component map, who-built-what
+fingerprints, and every gap found). **Section 4 records what was actually fixed and verified**;
+section 5 lists what's still open for a human decision. Everything below was run for real —
+trained the model, started all 4 services, drove the dashboard in a real browser, see §4.5.
 
 ## 1. Components as built
 
@@ -145,35 +146,142 @@ processes plus a Vite dev server currently have no single start command.
 - `docs/PITCH.md`, `DEMO_SCRIPT.md` reference a live demo flow that assumes all of the above
   already works.
 
-## 4. Plan to close the gaps (proposed, not yet applied)
+## 4. What was fixed, and how it was verified
 
-1. **Fix the gitignore collision**; add `dashboard/src/lib/*.ts` (utils, error-capture,
-   error-page, lovable-error-reporting, api-client) for real, written against the actual
-   engine/agent contracts above.
-2. **Fix the fraud API-key gap**: plumb `FRAUD_API_KEY` through `agent/tools.py`'s live-mode
-   requests (`X-API-Key` header) and through the dashboard's direct health check.
-3. **Root `.env.example`** covering every env var above, with sane localhost defaults
-   (ports 8000-8003, `FRAUD_CORS_ORIGINS=http://localhost:3000`, `VERITY_ENV=live` for the
-   integrated run).
-4. **One bring-up path**: a small script/`docker compose`/`package.json`-level orchestration
-   that (a) trains the fraud model if `model.pkl` is missing, (b) starts all 4 uvicorn services,
-   (c) starts the dashboard dev server — plus a smoke-test script exercising
-   health → investigate → chat → counterfactual end to end.
-5. **Pick one dashboard package manager** (npm, since `package-lock.json` + `package.json`
-   scripts are the canonical TanStack Start setup and npm is already required by the root
-   `README.md` prerequisites) and remove the other lockfile.
-6. **Fix the Windows timing bug** in `agent/fallback.py`.
-7. Refresh `docs/API_SPEC.md` to match actual routes (cleanup phase, after everything runs).
+### 4.1 Fixes applied (each is its own commit on `integration/wiring` — see git log)
+1. **Gitignore collision** — scoped the root `.gitignore`'s bare `lib/`/`lib64/` rule so it
+   can no longer shadow `dashboard/src/lib/**`; Python venv dirs are already covered by the
+   `venv/`/`.venv/` patterns below it, so nothing was lost.
+2. **Wrote the missing `dashboard/src/lib/*.ts`** for real: `utils.ts` (`cn()`), `api-client.ts`
+   (against the actual engine/agent contracts, not the never-realized stub), `error-capture.ts`,
+   `error-page.ts`, `lovable-error-reporting.ts`. Dashboard now typechecks (`tsc --noEmit`),
+   lints clean, and builds (`vite build`, SSR + client + nitro all succeed).
+3. **Fraud API-key gap** — `agent/tools.py` now forwards `X-API-Key: $FRAUD_API_KEY` on every
+   live-mode call into the fraud engine (`get_transaction`, `get_shap_explanation`,
+   `counterfactual`). Verified: `scripts/smoke_test.py` step 1b asserts an unauthenticated
+   direct call is rejected (401) while the agent's own live calls succeed.
+4. **`get_transaction` tier-routing bug (found during live wiring, not in the original
+   survey)** — in live mode, `get_transaction` unconditionally called the fraud engine
+   regardless of the transaction's actual tier. Since the fraud engine parses any digits out
+   of the ID as a row index, a ledger or synthetic-network ID (e.g. `TX-SYNTH-5501`) would
+   silently resolve as some unrelated `real_card` row, and every downstream reasoning step
+   (`get_shap_explanation` instead of `walk_graph`) followed the wrong tier. Fixed by routing
+   on ID prefix (`LEDGER` → ledger engine, `SYNTH`/`SYN` → typology network edge lookup, else
+   → fraud), matching the same prefix logic already used by the mock-mode fallback in the same
+   function. Regression test: `tests/test_agent_tools.py::test_live_mode_routes_get_transaction_by_id_prefix`;
+   also covered live end-to-end by `scripts/smoke_test.py` step 4.
+5. **Windows latency-guard timing bug** — `agent/fallback.py::execute_with_latency_guard` now
+   uses `time.perf_counter()` (monotonic, high-resolution) and `>=` instead of `time.time()` +
+   strict `>`, which could tie at exactly `0.0` elapsed on Windows and skip the fallback path
+   entirely. `tests/test_agent_fallback.py::test_latency_guard_timeout` now passes reliably.
+6. **Root `.env.example`** — every env var from every service in one file, with working
+   localhost defaults, including `FRAUD_CORS_ORIGINS=http://localhost:3000` (previously unset,
+   which blocks every browser origin by design — the fraud engine fails closed on CORS too).
+7. **Dropped the duplicate package manager** — removed `dashboard/bun.lock` and
+   `dashboard/bunfig.toml`; `package.json` + `package-lock.json` (npm) is now the only
+   canonical install path, matching the root README's stated prerequisite.
+8. **Wired the dashboard to live data** (`dashboard/src/components/verity-workspace.tsx`):
+   - Reasoning trace + risk score: calls `POST /api/v1/agent/investigate` per selected case;
+     renders real `AgentTraceEvent`s + narrative when it succeeds, falls back to the labeled
+     fixture trace on any failure (never a blank panel).
+   - Risk factors: live SHAP `top_factors` from the fraud engine for the `real_card` case;
+     labeled fixture for the other two tiers (see §5.1 for why those can't resolve live yet).
+   - Evidence surface: live ledger timeline (first real account from `/ledger/accounts`) and
+     live typology network (`/typology/network`, real node/edge counts and amounts) replace the
+     decorative SVG's text/labels when available; the geometry stays the same, only the data
+     behind it is real.
+   - Every live surface is explicitly labeled "Live ..." vs "Demo exhibit" — the product's own
+     honesty principle (`VERITY_BUILD_SPEC.md` §6) applied to the wiring itself, not just the
+     chat fallback it was written for.
+9. **One-command bring-up + real smoke test** — `scripts/dev_up.py` (trains the model if
+   missing, starts all 4 services + dashboard) and `scripts/smoke_test.py` (starts all 4 real
+   services, no mocks, exercises every critical path over HTTP, tears down, exit code reflects
+   pass/fail).
 
-None of this touches the actual detection logic (SHAP, anomaly rules, FATF typology rules,
-grounding filter) — those are complete and tested. The gap is entirely in wiring, auth, config,
-and one missing frontend directory.
+### 4.2 What was deliberately left alone
+Per the brief's "don't rewrite working logic just for style" — SHAP computation, anomaly
+detection math, FATF typology rules, the grounding filter, and the hand-rolled agent loop are
+untouched. All fixes above are wiring, auth, config, or a genuine cross-tier routing bug; none
+touch detection logic.
 
-**Open question for you before I proceed**: dashboard currently only wires a masthead health
-check to live data; case list/evidence/factors are fixtures. Do you want me to (a) keep the
-fixture `CASES` array as *seed* data but make evidence panels (SHAP factors, timeline, graph)
-fetch live from the engines for the currently-selected case, replacing the placeholder SVG/points,
-or (b) leave the dashboard's visual data as-is and only wire the parts already stubbed
-(`checkEnginesHealth`, `askCounterfactualOrChat`) since that's the minimum to make the imports
-resolve and the query panel functional? I'm defaulting to (a) — it's what "replace mocks with
-real calls" in the brief calls for — unless you'd rather scope it down.
+### 4.3 Naming/casing/error-format conventions
+No unification was needed here: every Python service already used snake_case field names
+matching `contracts/schemas.json` verbatim, and FastAPI's default `{"detail": "..."}` error
+shape is consistent across all four services. The frontend never got far enough to diverge
+before this pass. The one real convention decision was the package manager (§4.1.7) — picked
+npm over bun because it required deleting one lockfile instead of migrating `package.json`
+scripts, tooling configs, and CI expectations to bun.
+
+### 4.4 Clean install, from scratch
+Verified in this session: `python -m venv .venv && pip install -r requirements.txt` and
+`cd dashboard && npm install` both succeed from a clean checkout with no manual patching.
+
+### 4.5 End-to-end verification actually performed
+- `pytest -v` → **56 passed**, 0 failed (was 6 failed / 49 passed at survey time).
+- `python scripts/smoke_test.py` → **all checks passed**: fraud auth + SHAP, ledger accounts/
+  timeline/walk against the real 10-account `bank.xlsx`, typology network/flags against the
+  real generated FATF graph, full agent investigation loop for all three tiers (verified each
+  stays on its correct `tier_origin` and calls the correct tool), model-backed counterfactual
+  (verified the recalculated score actually moves on a real fraud-labeled row), chat with
+  disclosed cached fallback.
+- `cd dashboard && npx tsc --noEmit && npm run build` → clean typecheck, successful client + SSR
+  + nitro build.
+- Drove the running dashboard in a real headless browser against all 4 live services: masthead
+  reports "Engines online (4/4)"; selecting the synthetic-network case shows a live-fetched
+  network caption ("Live network · 29 accounts · 192 transactions") and a reasoning trace with
+  real `get_transaction` → `walk_graph` events (this is what caught the tier-routing bug in
+  §4.1.4 — it only surfaced once the dashboard was actually driving the real loop).
+
+## 5. Remaining gaps — needs a human decision or follow-up work
+
+### 5.1 Demo case IDs don't resolve against the live datasets (needs a decision)
+`contracts/mock_data/` and the dashboard's fixture `CASES` array use illustrative IDs
+(`ACC-1092`, `TX-LEDGER-3011`, `ACC-SYN-401`, `TX-SYNTH-5501`) invented for the mock-mode demo
+narrative. The real datasets don't share that ID space:
+- Real ledger account IDs are literal bank account numbers (e.g. `409000362497`), and real
+  parsed transaction IDs are sequential (`TX-LEDGER-000001` post-sort) — nothing like `ACC-1092`.
+- The real generated synthetic network seeds role-based IDs (`ACC-SMURF-*`, `ACC-RT-*`,
+  `ACC-LAYER-*`, `ACC-BENIGN-*`) and edge IDs like `TX-SYNTH-0020` — nothing like `ACC-SYN-401`
+  or `TX-SYNTH-5501`.
+- Net effect: in live mode, the ledger/synthetic demo cases' `get_transaction`/`walk_graph`
+  calls correctly fail to match anything live (by design — this is honest behavior, not a
+  crash: `walk_graph` on a nonexistent live account returns "no connected entities" rather than
+  fabricating a path) and fall back to the mock fixture, same as before this pass. Only the
+  `real_card` case (`TX-CARD-9842`, which the fraud engine parses as a literal, in-range row
+  index) resolves against real data for every tool.
+- **Decision needed**: either (a) regenerate `contracts/mock_data/` and the dashboard's `CASES`
+  fixture from IDs actually present in the live datasets (requires picking specific real
+  accounts/rows to build a demo narrative around, and touches Person B's and Person D's
+  content), or (b) accept that only the card-fraud case is fully live-representative and the
+  other two intentionally demonstrate the mock fallback path. Not changed in this pass — it's
+  a product/demo-content decision, not a code defect.
+
+### 5.2 `VITE_FRAUD_API_KEY` ships inside the client bundle
+Documented in `.env.example` and `api-client.ts`: embedding the fraud engine's API key in a
+Vite client build means it's visible to anyone who opens the bundle. Acceptable for this
+decision-support prototype behind an internal network (per `VERITY_BUILD_SPEC.md` §8, "not a
+production-audited compliance system"); a real deployment should proxy fraud-engine calls
+through the TanStack Start server (`dashboard/src/server.ts` already exists as that seam) so
+the key never reaches the browser.
+
+### 5.3 First ledger `/timeline/{account_id}` call is slow for large accounts
+No pre-warmed cache (`data/cache/timelines.json` is only ever read, never written by anything
+in this repo) — the first request for a given account computes anomalies on demand. Measured
+up to ~15-20s for the largest account in this dataset. Not a correctness issue (the smoke test
+timeout was raised to accommodate it), but worth a pre-warm step or a longer client timeout if
+this becomes the default landing view.
+
+### 5.4 `docs/API_SPEC.md` was stale; now refreshed
+Was missing `/ledger/accounts`, `/ledger/walk`, `/ledger/transaction`, `/typology/network`, the
+fraud engine's auth requirement, and the agent's own API entirely. Rewritten in this pass to
+match the implementation, verified against `scripts/smoke_test.py`'s real calls.
+
+### 5.5 Untouched, still true from the original survey
+- `agent/llm.py`'s "LLM-backed" reasoning is a deterministic rules engine unless
+  `VERITY_LLM_API_KEY`/`OPENAI_API_KEY` is supplied — by design, not a gap, but worth restating:
+  nothing in this pass required or tested a real external LLM call.
+- The duplicate `POST /api/v1/agent/counterfactual` route registered directly on the fraud
+  engine (`engines/fraud/api.py`) is dead code — nothing calls it; the agent's own
+  `/api/v1/agent/counterfactual` (which goes through `agent/tools.py`) is what's actually used
+  end-to-end. Flagging rather than deleting, since it's Person A's code and not blocking
+  anything — a call to remove it belongs to a future cleanup pass with their sign-off.
