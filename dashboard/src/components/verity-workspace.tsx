@@ -600,6 +600,18 @@ function Factors({ item, liveFactors }: { item: CaseFile; liveFactors: FraudExpl
           </span>
         )}
       </div>
+      {liveFactors?.risk_interval && (
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          Risk score <span className="font-mono font-semibold text-ink">{liveFactors.risk_score.toFixed(2)}</span>
+          , with a {Math.round(liveFactors.risk_interval.confidence_level * 100)}% confidence interval of{" "}
+          <span className="font-mono font-semibold text-ink">
+            [{liveFactors.risk_interval.lower.toFixed(2)}, {liveFactors.risk_interval.upper.toFixed(2)}]
+          </span>
+          <span className="ml-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground/80">
+            (split-conformal · validated at {(liveFactors.risk_interval.empirical_coverage * 100).toFixed(1)}% empirical coverage)
+          </span>
+        </p>
+      )}
       <div className="mt-4 divide-y divide-ink/10">
         {factors.map((factor) => (
           <div

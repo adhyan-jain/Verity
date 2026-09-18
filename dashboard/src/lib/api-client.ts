@@ -39,12 +39,23 @@ export type TopFactor = {
   interpretable: boolean;
 };
 
+export type RiskInterval = {
+  lower: number;
+  upper: number;
+  confidence_level: number;
+  empirical_coverage: number;
+};
+
 export type FraudExplanation = {
   transaction_id: string;
   risk_score: number;
   verdict: "flagged" | "clear";
   top_factors: TopFactor[];
   model_version: string;
+  // Additive to top_factors (SHAP): split-conformal interval around
+  // risk_score (engines/fraud/conformal.py). Null until calibration has
+  // been run at least once.
+  risk_interval: RiskInterval | null;
 };
 
 export type ReconciliationAnomaly = {
