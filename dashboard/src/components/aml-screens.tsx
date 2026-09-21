@@ -57,6 +57,17 @@ import {
   type ScopedChatResponse,
 } from "../lib/api-client";
 
+function getQueueRiskScore(item: AmlQueueItem): number {
+  const rawItem = item as AmlQueueItem & { final_score?: number; original_score?: number };
+  return typeof item.risk_score === "number"
+    ? item.risk_score
+    : typeof rawItem.final_score === "number"
+    ? rawItem.final_score
+    : typeof rawItem.original_score === "number"
+    ? rawItem.original_score
+    : 0.82;
+}
+
 // ============================================================================
 // Reusable Deterministic Pagination Control Component
 // ============================================================================
@@ -175,9 +186,11 @@ export function PaginationControl({
 export function AmlQueueColumn({
   selectedAccountId,
   onSelectAccount,
+  onQueueStats,
 }: {
   selectedAccountId: string | null;
   onSelectAccount: (accountId: string, primaryTxId?: string) => void;
+  onQueueStats?: (stats: { totalCases: number; highCases: number; mediumCases: number; smurfingAccounts: number }) => void;
 }) {
   const [queue, setQueue] = useState<AmlQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -197,6 +210,17 @@ export function AmlQueueColumn({
       if (!mounted) return;
       if (res && res.records) {
         setQueue(res.records);
+        const records = res.records;
+        onQueueStats?.({
+          totalCases: records.length,
+          highCases: records.filter((item) => getQueueRiskScore(item) >= 0.7).length,
+          mediumCases: records.filter((item) => getQueueRiskScore(item) < 0.7 && getQueueRiskScore(item) >= 0.4).length,
+          smurfingAccounts: new Set(
+            records
+              .filter((item) => /smurf|structur/i.test(`${item.raw_narration} ${item.payment_rail}`))
+              .map((item) => item.account_id),
+          ).size,
+        });
         if (!selectedAccountId && res.records.length > 0) {
           const first = res.records[0];
           onSelectAccount(first.account_id, first.id || (first as any).transaction_id);
@@ -211,7 +235,7 @@ export function AmlQueueColumn({
 
   const normalizedItems = queue.map((item) => {
     const rawAny = item as any;
-    const score = typeof item.risk_score === "number" ? item.risk_score : typeof rawAny.final_score === "number" ? rawAny.final_score : typeof rawAny.original_score === "number" ? rawAny.original_score : 0.82;
+    const score = getQueueRiskScore(item);
     const amount = typeof item.amount === "number" ? item.amount : typeof rawAny.amount === "number" ? rawAny.amount : 200000.0;
     const id = item.id || rawAny.transaction_id || `TX-${item.account_id}`;
     const timestamp = item.timestamp ? String(item.timestamp).slice(0, 10) : "2019-02-12";
@@ -490,6 +514,10 @@ export function CustomerWorkbenchColumn({
   const tracePageSize = 4;
 
   useEffect(() => {
+    setActiveTab("timeline");
+  }, [accountId]);
+
+  useEffect(() => {
     let mounted = true;
     setTimelineLoading(true);
     setBreakdownLoading(true);
@@ -505,13 +533,13 @@ export function CustomerWorkbenchColumn({
       setTimelineLoading(false);
     });
 
-    fetchAmlBreakdown(accountId).then((res) => {
+    fetchAmlBreakdown(accountId, primaryTxId).then((res) => {
       if (!mounted) return;
       setBreakdown(res);
       setBreakdownLoading(false);
     });
 
-    fetchAmlTrace(accountId).then((res) => {
+    fetchAmlTrace(accountId, primaryTxId).then((res) => {
       if (!mounted) return;
       setTraceData(res);
       if (res && res.trace_steps.length > 0) setSelectedStep(res.trace_steps[0]);
@@ -1324,6 +1352,27 @@ function FastForwardIcon() {
 export function UnifiedAmlCockpit() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("409000493210");
   const [selectedTxId, setSelectedTxId] = useState<string | undefined>("TX-LEDGER-114686");
+  const [selectionHydrated, setSelectionHydrated] = useState(false);
+  const [queueStats, setQueueStats] = useState({
+    totalCases: 0,
+    highCases: 0,
+    mediumCases: 0,
+    smurfingAccounts: 0,
+  });
+
+  useEffect(() => {
+    const savedAccountId = window.localStorage.getItem("verity.selectedAccountId");
+    const savedTxId = window.localStorage.getItem("verity.selectedTxId");
+    if (savedAccountId) setSelectedAccountId(savedAccountId);
+    if (savedTxId) setSelectedTxId(savedTxId);
+    setSelectionHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!selectionHydrated) return;
+    window.localStorage.setItem("verity.selectedAccountId", selectedAccountId);
+    if (selectedTxId) window.localStorage.setItem("verity.selectedTxId", selectedTxId);
+  }, [selectedAccountId, selectedTxId, selectionHydrated]);
 
   return (
     <div className="space-y-4">
@@ -1336,9 +1385,9 @@ export function UnifiedAmlCockpit() {
             <ShieldAlert className="size-3 text-signal" />
           </div>
           <div className="mt-1 font-display text-2xl font-black text-ink">
-            25
+            {queueStats.totalCases || "..."}
           </div>
-          <div className="text-[10px] text-muted-foreground">Accounts monitored</div>
+          <div className="text-[10px] text-muted-foreground">Cases in this queue</div>
         </div>
 
         {/* KPI 2 */}
@@ -1348,7 +1397,7 @@ export function UnifiedAmlCockpit() {
             <span className="size-2 rounded-full bg-red-500 animate-pulse" />
           </div>
           <div className="mt-1 font-display text-2xl font-black text-red-600 dark:text-red-400">
-            8
+            {queueStats.highCases || "..."}
           </div>
           <div className="text-[10px] text-muted-foreground">PaySim RF Score &ge; 0.70</div>
         </div>
@@ -1360,7 +1409,7 @@ export function UnifiedAmlCockpit() {
             <Activity className="size-3 text-amber-500" />
           </div>
           <div className="mt-1 font-display text-2xl font-black text-amber-600 dark:text-amber-400">
-            1 Acct
+            {queueStats.smurfingAccounts || "..."} Acct{queueStats.smurfingAccounts === 1 ? "" : "s"}
           </div>
           <div className="text-[10px] text-muted-foreground">₹993 cluster under ₹1,000</div>
         </div>
@@ -1408,6 +1457,7 @@ export function UnifiedAmlCockpit() {
         <div className="lg:col-span-3 h-full">
           <AmlQueueColumn
             selectedAccountId={selectedAccountId}
+            onQueueStats={setQueueStats}
             onSelectAccount={(accId, txId) => {
               setSelectedAccountId(accId);
               if (txId) setSelectedTxId(txId);
