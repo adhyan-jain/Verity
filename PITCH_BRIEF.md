@@ -1,7 +1,7 @@
 # Verity — Pitch Briefing
 
 Written for whoever is presenting, not for engineers. Every claim below is grounded in the
-actual code and was checked by running it — not by reading a teammate's comment and trusting
+actual codebase and was checked by running it — not by reading a teammate's comment and trusting
 it. Where something is unfinished or mocked, this doc says so directly, because that's more
 useful to you on stage than getting caught by a judge's question.
 
