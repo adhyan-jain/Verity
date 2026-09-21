@@ -4,6 +4,7 @@ Written for whoever is presenting, not for engineers. Every claim below is groun
 actual codebase and was checked by running it — not by reading a teammate's comment and trusting
 it. Where something is unfinished or mocked, this doc says so directly, because that's more
 useful to you on stage than getting caught by a judge's question.
+Use this brief as the source of truth for the live demo narrative.
 
 ---
 
