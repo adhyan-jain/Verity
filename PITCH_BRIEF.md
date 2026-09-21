@@ -412,3 +412,5 @@ story about rigor, not something to hide.
 - **Expand the FATF typology library** beyond the three currently implemented (structuring,
   round-tripping, rapid layering) — there are more recognized patterns in FATF guidance not yet
   covered.
+
+#The presentation was completed on 19 September, 2026
