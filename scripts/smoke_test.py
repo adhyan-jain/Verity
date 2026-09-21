@@ -33,7 +33,14 @@ def check(label: str, condition: bool, detail: str = "") -> None:
 
 def run_checks() -> None:
     fraud_key = os.environ.get("FRAUD_API_KEY", "")
-    fraud_headers = {"X-API-Key": fraud_key}
+    ledger_key = os.environ.get("LEDGER_API_KEY", "")
+    typology_key = os.environ.get("TYPOLOGY_API_KEY", "")
+    agent_key = os.environ.get("AGENT_API_KEY", "")
+
+    fraud_headers = {"X-API-Key": fraud_key} if fraud_key else {}
+    ledger_headers = {"X-API-Key": ledger_key} if ledger_key else {}
+    typology_headers = {"X-API-Key": typology_key} if typology_key else {}
+    agent_headers = {"X-API-Key": agent_key} if agent_key else {}
 
     print("\n1. Fraud engine — real card transaction + SHAP explanation")
     resp = requests.get(
@@ -78,7 +85,11 @@ def run_checks() -> None:
     )
 
     print("\n2. Ledger engine — real bank.xlsx accounts, timeline, walk")
-    resp = requests.get("http://127.0.0.1:8002/api/v1/ledger/accounts", timeout=45)
+    resp = requests.get(
+        "http://127.0.0.1:8002/api/v1/ledger/accounts",
+        headers=ledger_headers,
+        timeout=45,
+    )
     check(
         "list_accounts returns 200",
         resp.status_code == 200,
@@ -86,11 +97,13 @@ def run_checks() -> None:
     )
     accounts = resp.json()
     check("at least one real account parsed", len(accounts) > 0)
-    account_id = accounts[0]["account_id"] if accounts else None
+    account_id = accounts[0]["account_id"] if (isinstance(accounts, list) and accounts) else None
 
     if account_id:
         resp = requests.get(
-            f"http://127.0.0.1:8002/api/v1/ledger/timeline/{account_id}", timeout=45
+            f"http://127.0.0.1:8002/api/v1/ledger/timeline/{account_id}",
+            headers=ledger_headers,
+            timeout=45,
         )
         check(
             "get_timeline returns 200 for a real account",
@@ -101,7 +114,9 @@ def run_checks() -> None:
         check("timeline has transactions", len(timeline.get("transactions", [])) > 0)
 
         resp = requests.get(
-            f"http://127.0.0.1:8002/api/v1/ledger/walk/{account_id}", timeout=10
+            f"http://127.0.0.1:8002/api/v1/ledger/walk/{account_id}",
+            headers=ledger_headers,
+            timeout=10,
         )
         check(
             "walk_ledger_graph returns 200",
@@ -110,7 +125,11 @@ def run_checks() -> None:
         )
 
     print("\n3. Typology engine — synthetic FATF network + flags")
-    resp = requests.get("http://127.0.0.1:8003/api/v1/typology/network", timeout=10)
+    resp = requests.get(
+        "http://127.0.0.1:8003/api/v1/typology/network",
+        headers=typology_headers,
+        timeout=10,
+    )
     check(
         "get_synthetic_network returns 200",
         resp.status_code == 200,
@@ -122,7 +141,11 @@ def run_checks() -> None:
         len(network.get("nodes", [])) > 0 and len(network.get("edges", [])) > 0,
     )
 
-    resp = requests.get("http://127.0.0.1:8003/api/v1/typology/flags", timeout=10)
+    resp = requests.get(
+        "http://127.0.0.1:8003/api/v1/typology/flags",
+        headers=typology_headers,
+        timeout=10,
+    )
     check(
         "list_typology_flags returns 200",
         resp.status_code == 200,
@@ -135,6 +158,7 @@ def run_checks() -> None:
     )
     resp = requests.post(
         "http://127.0.0.1:8000/api/v1/agent/investigate",
+        headers=agent_headers,
         json={
             "case_id": "SMOKE-CARD-001",
             "transaction_id": "TX-CARD-9842",
@@ -155,6 +179,7 @@ def run_checks() -> None:
     # ARCHITECTURE.md for the bug this caught during integration.
     resp = requests.post(
         "http://127.0.0.1:8000/api/v1/agent/investigate",
+        headers=agent_headers,
         json={
             "case_id": "SMOKE-SYNTH-001",
             "transaction_id": "TX-SYNTH-5501",
@@ -178,6 +203,7 @@ def run_checks() -> None:
 
     resp = requests.post(
         "http://127.0.0.1:8000/api/v1/agent/investigate",
+        headers=agent_headers,
         json={
             "case_id": "SMOKE-LEDGER-001",
             "transaction_id": "TX-LEDGER-3011",
@@ -201,6 +227,7 @@ def run_checks() -> None:
     # assert against. See ARCHITECTURE.md "Remaining gaps" for the ID overload.
     resp = requests.post(
         "http://127.0.0.1:8000/api/v1/agent/counterfactual",
+        headers=agent_headers,
         json={"transaction_id": "TX-CARD-623", "parameter_overrides": {"Amount": 5.0}},
         timeout=15,
     )
@@ -219,6 +246,7 @@ def run_checks() -> None:
     print("\n6. Agent core — chat, including cached fallback for a benchmark question")
     resp = requests.post(
         "http://127.0.0.1:8000/api/v1/agent/chat",
+        headers=agent_headers,
         json={"case_id": "SMOKE-CARD-001", "query": "why was this flagged"},
         timeout=25,
     )
