@@ -182,4 +182,5 @@ Narrative-model consistency measures the percentage of counterfactual transactio
   detection engine internals, agent grounding rules).
 - [`docs/PITCH.md`](docs/PITCH.md), [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) — presentation
   materials.
+- [`PITCH_BRIEF.md`](PITCH_BRIEF.md) — comprehensive briefing and source of truth for the demo narrative.
 
